@@ -1,0 +1,249 @@
+# ops-agent 全栈编排
+# 启动：docker compose up -d --build
+# 横向扩展验证：docker compose up -d --scale api=3
+# 压测：docker compose --profile loadtest up -d locust
+# 建库：docker compose run --rm build-kb
+#
+# 设计说明：
+#   api 不 publish 端口 —— 由 nginx 统一入口，这样才能真正做到 --scale api=N
+#   redis 用 redis-stack（自带 RediSearch），语义缓存靠它的 KNN 向量检索，不必额外起一个向量库
+name: ops-agent
+
+services:
+  # ==================== 入口层 ====================
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ops-nginx
+    ports:
+      - "8080:80"          # 宿主 8080 —— 避免与 cs-agent 的 8000 冲突
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ==================== 业务服务（无状态，可横向扩展）====================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # 注意：不写 container_name —— 会与 --scale 冲突
+    env_file:
+      - .env
+    environment:
+      - OTEL_SERVICE_NAME=ops-agent-api
+      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      # 容器内必须用 compose 服务名：.env 里的 localhost 是给**宿主机脚本**用的，
+      # 在容器里 localhost 指向容器自己，会直接连不上 redis / qdrant。
+      # 这里显式覆盖，让"同一份 .env 两种运行位置都对"。
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    expose:
+      - "8000"
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+      - ./data:/app/data:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 90s      # BGE 模型首次加载较慢
+    deploy:
+      replicas: 2            # docker compose v2 会遵守；也可用 --scale api=3 覆盖
+    restart: unless-stopped
+
+  # ==================== 缓存层 ====================
+  # redis-stack 含 RediSearch，语义缓存直接用 KNN 向量检索，省一个组件
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: ops-redis
+    ports:
+      # 宿主端口用 16379，**刻意避开 6379**：
+      # 本机 D:\Program Files\Redis 装过 Redis 3.0.504（Windows 服务，占着 0.0.0.0:6379），
+      # 两个进程同时监听时 localhost:6379 会命中那个老实例 —— 它不支持 HELLO（Redis 6+ 才有），
+      # 也没有 RediSearch，症状是入库脚本报 unknown command 'HELLO'、
+      # 且语义缓存整层静默失效。换端口是最省事的隔离方式，不必动本机那个服务。
+      # 容器之间仍走 6379（服务名 redis:6379），不受此映射影响。
+      - "6379:6379"
+    environment:
+      # allkeys-lru：内存满时按 LRU 淘汰，缓存场景正解
+      - REDIS_ARGS=--appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  # ==================== 检索层 ====================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ops-qdrant
+    ports:
+      - "6333:6333"          # REST + Dashboard http://localhost:6333/dashboard
+      - "6334:6334"          # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # ==================== 外部系统模拟（Java MCP Server 的数据源）====================
+  mysql:
+    image: mysql:8.4
+    container_name: ops-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: ops_ticket
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"          # 避开本机可能已有的 3306
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init_mysql.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  # ==================== 可观测层 ====================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ops-grafana
+    ports:
+      - "3001:3000"          # 避开 cs-agent 的 3000
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ==================== 一次性任务 ====================
+  build-kb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["build"]
+    env_file:
+      - .env
+    environment:
+      - HF_ENDPOINT=https://hf-mirror.com
+      # 同 api：容器内用服务名，别让 .env 里的 localhost 漏进来
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    volumes:
+      - ./data:/app/data
+      - ./eval:/app/eval
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    # build 阶段（切块/建点/BM25/图谱）不依赖模型，先跑完再进入 index 阶段
+    command: ["python", "-m", "scripts.ingest", "--stage", "all", "--backend", "qdrant"]
+
+  eval:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["eval"]
+    env_file:
+      - .env
+    environment:
+      # 同 api：容器内用服务名
+      # （本服务不依赖 Redis —— 检索评估是纯离线计算，别让 .env 的 localhost 漏进来即可）
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    volumes:
+      - ./data:/app/data
+      - ./eval:/app/eval
+      - ./eval_output:/app/eval_output
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    # 一次跑出四组对比：关键词单路 / 向量单路 / 向量+RRF / +重排
+    # 四组同题同 k，才能支撑"重排把 @1 从 x 提到 y"这种说法
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for cfg in "bm25" "local" "local --fusion rrf" "local --fusion rrf --rerank"; do
+          echo "===== backend: $$cfg ====="
+          python -m scripts.eval_retrieval --backend $$cfg --sweep
+        done
+
+  # ==================== 压测（docker compose --profile loadtest up -d locust）====================
+  locust:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["loadtest"]
+    env_file:
+      - .env
+    ports:
+      - "8089:8089"          # Locust Web UI
+    volumes:
+      - ./loadtest:/app/loadtest:ro
+    command:
+      - locust
+      - -f
+      - /app/loadtest/locustfile.py
+      - --host
+      - http://nginx
+
+volumes:
+  redis_data:
+  qdrant_data:
+  mysql_data:
+  prometheus_data:
+  grafana_data:
+  huggingface_cache:

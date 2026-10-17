@@ -1,0 +1,49 @@
+﻿# ---- Web 服务 ----
+fastapi
+uvicorn[standard]
+sse-starlette
+python-multipart
+
+# ---- 配置与校验 ----
+pydantic
+pydantic-settings
+python-dotenv
+
+# ---- LLM ----
+openai
+
+# ---- 检索 ----
+# 向量库：默认 Qdrant。两个 SDK 都装不是必需的 —— 但都装上就能用
+# `--backend chroma` 直接跑同一套评估脚本做横向对照，成本只有一个包。
+qdrant-client
+chromadb
+sentence-transformers
+bm25s
+numpy
+pymupdf
+
+# ---- 缓存 ----
+redis
+
+# ---- 编排 ----
+langgraph
+langchain-core
+
+# ---- 高可用 ----
+tenacity
+pybreaker
+
+# ---- 可观测 ----
+prometheus-client
+prometheus-fastapi-instrumentator
+langfuse
+httpx
+
+# ---- 压测与测试 ----
+locust
+pytest
+pytest-asyncio
+
+# ---- 可选：入库增强 ----
+# 真实 OCR（OCR_PROVIDER=rapidocr 时必需；默认的 transcript 回放不需要任何依赖）
+# rapidocr-onnxruntime

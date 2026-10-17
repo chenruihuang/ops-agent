@@ -1,0 +1,53 @@
+[
+  {
+    "id": 1,
+    "question": "在家办公 VPN 连不上内网，应该怎么排查？",
+    "intent": "rag",
+    "difficulty": "medium",
+    "golden_doc_ids": ["kb-vpn-troubleshooting-001", "kb-vpn-cert-002"],
+    "golden_ticket_nos": [],
+    "answer_anchors": ["证书", "过期", "重新导入"],
+    "expected_tools": [],
+    "key_points": [
+      "先确认 VPN 客户端版本与配置地址是否与企业门户一致",
+      "检查客户端证书是否过期（常见根因）",
+      "证书过期需从门户重新下载并导入",
+      "仍失败时提供报错码给运维，便于定位网关侧问题"
+    ],
+    "notes": "对应历史工单 TK-20260101，可作为真实场景回溯验证"
+  },
+  {
+    "id": 2,
+    "question": "生产库报 Too many connections，历史上是怎么解决的？",
+    "intent": "hybrid",
+    "difficulty": "hard",
+    "golden_doc_ids": ["kb-mysql-pool-003"],
+    "golden_ticket_nos": ["TK-20260115"],
+    "answer_anchors": ["连接池", "max_connections", "150"],
+    "expected_tools": ["query_ticket_by_keyword", "get_asset_by_code"],
+    "key_points": [
+      "MySQL 侧 max_connections 从 200 提升到 800",
+      "应用侧连接池上限需下调以避免抢占，本次定为 150",
+      "根因是压测后连接池配置未同步调整",
+      "后续需补充连接数水位监控与告警"
+    ],
+    "notes": "这条同时考察 RAG 与工具调用，用于验证混合意图路由"
+  },
+  {
+    "id": 3,
+    "question": "SRV-0001 这台机器现在是什么状态？",
+    "intent": "tool",
+    "difficulty": "easy",
+    "golden_doc_ids": [],
+    "golden_ticket_nos": [],
+    "answer_anchors": ["online", "app-prod-01", "10.0.1.11"],
+    "expected_tools": ["get_asset_by_code"],
+    "key_points": [
+      "资产编码 SRV-0001 对应主机名 app-prod-01",
+      "IP 为 10.0.1.11",
+      "状态为 online",
+      "归属机房 A-机柜 3"
+    ],
+    "notes": "纯工具类问题，结构化数据不应进向量库；用于验证路由是否走对链路"
+  }
+]

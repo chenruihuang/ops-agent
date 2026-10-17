@@ -1,0 +1,56 @@
+# monitoring/alerts.yml
+# MTTR 指标的"检测时刻 T2"由这些规则决定 —— 没有告警，MTTR 就无从测量。
+# 面试时能说清"我的 MTTR 是从指标越界算起，不是从故障注入算起"，是加分项。
+groups:
+  - name: ops-agent-availability
+    rules:
+      # 服务不可用：任何副本 down 超过 15s
+      - alert: ApiInstanceDown
+        expr: up{job="ops-api"} == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "ops-api 实例不可用 ({{ $labels.instance }})"
+
+      # 错误率越界：5xx 占比 > 5%，持续 30s
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="ops-api", status=~"5.."}[1m]))
+          /
+          clamp_min(sum(rate(http_requests_total{job="ops-api"}[1m])), 0.001) > 0.05
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx 错误率超过 5%"
+
+      # 依赖熔断器打开
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state{state="open"} > 0
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "熔断器已打开：{{ $labels.dependency }}"
+
+      # 首 token 延迟劣化：P95 TTFT > 5s，持续 1 分钟
+      - alert: TTFTDegraded
+        expr: histogram_quantile(0.95, sum(rate(ttft_seconds_bucket[1m])) by (le)) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TTFT P95 超过 5s，链路可能劣化"
+
+      # 缓存命中率崩塌（通常意味着 kb_version 或 embedding 维度变了）
+      - alert: CacheHitRateCollapse
+        expr: |
+          sum(rate(cache_requests_total{result="hit"}[5m]))
+          /
+          clamp_min(sum(rate(cache_requests_total[5m])), 0.001) < 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "缓存命中率低于 5%，疑似版本号变更导致全量失效"

@@ -1,0 +1,13 @@
+.git
+.env
+__pycache__
+*.pyc
+.venv
+venv
+eval_output
+data/raw
+db
+*.whl
+vendor
+*.md
+!README.md

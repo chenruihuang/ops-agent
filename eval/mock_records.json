@@ -1,0 +1,127 @@
+{
+  "tickets": [
+    {
+      "ticket_no": "INC-2026-0412",
+      "title": "订单服务容器 OOMKilled 反复重启",
+      "service": "order-service",
+      "status": "处理中",
+      "owner": "@trade-oncall",
+      "related_runbook": "rb-pod-oomkilled",
+      "summary": "heap dump 显示 LocalSkuCache 持有 3.1GB 大对象，确认内存泄漏，修复中。"
+    },
+    {
+      "ticket_no": "INC-2026-0389",
+      "title": "支付回调积压 1428 条",
+      "service": "payment-gateway",
+      "status": "已解决",
+      "owner": "@pay-oncall",
+      "related_runbook": "rb-pay-callback-timeout",
+      "summary": "扩容消费者后积压清零，217 笔超时订单通过对账兜底完成状态修正。"
+    },
+    {
+      "ticket_no": "INC-2026-0401",
+      "title": "网关 TLS 证书过期导致全站 HTTPS 不可访问",
+      "service": "gateway",
+      "status": "已解决",
+      "owner": "@infra-oncall",
+      "related_runbook": "rb-cert-expired",
+      "summary": "cert-manager ACME DNS-01 校验超时导致自动续签失败，已手工换证并修复续签。"
+    },
+    {
+      "ticket_no": "INC-2026-0415",
+      "title": "order_db 慢查询导致连接池耗尽",
+      "service": "order-service",
+      "status": "已关闭",
+      "owner": "@trade-oncall",
+      "related_runbook": "rb-mysql-slow-query",
+      "summary": "order_main 缺 user_phone 索引引发全表扫描，补索引后 P95 由 6.8s 回落至 210ms。"
+    },
+    {
+      "ticket_no": "INC-2026-0420",
+      "title": "用户重复收到短信",
+      "service": "notify-service",
+      "status": "处理中",
+      "owner": "@infra-oncall",
+      "related_runbook": "",
+      "summary": "渠道重试与频控计数 key 过期窗口重叠，正在调整频控 TTL。"
+    },
+    {
+      "ticket_no": "INC-2026-0433",
+      "title": "ES 集群 red，搜索结果不完整",
+      "service": "search-service",
+      "status": "已解决",
+      "owner": "@search-oncall",
+      "related_runbook": "rb-es-cluster-red",
+      "summary": "app-log 索引写入打满 data 节点磁盘（>85% 水位拒绝分配），清理日志后恢复。"
+    }
+  ],
+  "assets": [
+    {
+      "asset_code": "SRV-0088",
+      "hostname": "app-prod-01",
+      "ip": "10.0.1.11",
+      "status": "online",
+      "room": "A 区-机柜 3",
+      "services": [
+        "order-service",
+        "user-center"
+      ]
+    },
+    {
+      "asset_code": "SRV-0077",
+      "hostname": "cache-prod-02",
+      "ip": "10.0.3.22",
+      "status": "degraded",
+      "room": "A 区-机柜 5",
+      "services": [
+        "redis-cluster"
+      ]
+    },
+    {
+      "asset_code": "SRV-0102",
+      "hostname": "db-prod-03",
+      "ip": "10.0.2.13",
+      "status": "online",
+      "room": "B 区-机柜 1",
+      "services": [
+        "order_db-slave"
+      ]
+    }
+  ],
+  "alerts": [
+    {
+      "alert_name": "OrderServiceHttp5xxRate",
+      "service": "order-service",
+      "severity": "P1",
+      "status": "firing",
+      "started_at": "2026-10-16 09:12",
+      "summary": "订单服务 5xx 比例 2.8%，超过 1% 阈值，持续 12 分钟"
+    },
+    {
+      "alert_name": "PaymentCallbackBacklog",
+      "service": "payment-gateway",
+      "severity": "P1",
+      "status": "firing",
+      "started_at": "2026-10-16 08:40",
+      "summary": "支付回调积压 1428 条，超过 500 阈值"
+    },
+    {
+      "alert_name": "SearchClusterRed",
+      "service": "search-service",
+      "severity": "P0",
+      "status": "resolved",
+      "started_at": "2026-10-15 22:05",
+      "ended_at": "2026-10-15 23:41",
+      "summary": "ES 集群 red，日志索引打满磁盘；清理后恢复"
+    },
+    {
+      "alert_name": "InventoryNodeDiskUsage",
+      "service": "inventory-service",
+      "severity": "P2",
+      "status": "resolved",
+      "started_at": "2026-10-14 14:20",
+      "ended_at": "2026-10-14 15:02",
+      "summary": "库存服务节点磁盘使用率 82%，已清理归档日志"
+    }
+  ]
+}

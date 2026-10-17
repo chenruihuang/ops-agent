@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+eval_output/
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+data/raw/
+data/index/
+db/
+qdrant_storage/

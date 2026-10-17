@@ -1,0 +1,462 @@
+"""服务档案与错误码字典 —— 知识源（Single Source of Truth）。
+
+设计原则：
+  1. 这里是全项目**唯一**的事实来源。语料文档、评估标注集、截图内容
+     全部从这里派生，因此三者之间不可能出现事实冲突。
+  2. 字段尽量具体：端口、阈值、命令、错误码必须是可被检索到的"硬事实"，
+     否则评估集测出来的召回率好看但毫无意义。
+  3. 每个服务都带 failmodes（常见故障 -> 关联 Runbook doc_id），
+     这些交叉引用是"多跳检索"类 QA 的语料基础。
+
+doc_id 命名约定：
+  svc-<service>   服务手册
+  err-<service>   错误码字典
+  rb-<topic>      故障处置 Runbook
+  alert-<topic>   告警规则
+  cmd-<topic>     命令手册
+  pol-<topic>     变更/规范
+  arch-<topic>    架构与容量
+  oncall-<topic>  值班与流程
+  obs-<topic>     可观测规范
+  faq-<nn>        常见问题
+"""
+
+from __future__ import annotations
+
+# =====================================================================
+# 一、微服务档案（12 个）
+# =====================================================================
+
+SERVICES: list[dict] = [
+    dict(
+        key="gateway",
+        name="API 网关",
+        domain="基础架构",
+        stack="OpenResty 1.21.4（Nginx + Lua）",
+        port="8080 (HTTP) / 8443 (HTTPS) / 9145 (metrics)",
+        replicas=4,
+        deploy="K8s Deployment gw-nginx，命名空间 infra",
+        repo="git.corp.example.com/infra/gateway",
+        oncall="@infra-oncall（基础架构组）",
+        health="/healthz 返回 200 即视为健康，不检查下游依赖",
+        runtime="worker_processes auto；worker_connections 65535",
+        slo_availability="99.95%",
+        slo_latency="P95 < 300ms（不含上游耗时）",
+        slo_budget="5xx 错误预算 0.05%/月",
+        upstreams=[
+            "user-center:8081", "order-service:8082", "payment-gateway:8083",
+            "inventory-service:8084", "promotion-service:8085",
+            "search-service:8086", "risk-engine:8089",
+        ],
+        mids=[
+            "Redis 7.2 集群（限流计数器，db 3）",
+            "Nacos 2.2（服务发现，命名空间 prod）",
+        ],
+        limits=[
+            "单 IP 限流 100 req/s（burst 200）",
+            "单接口限流 5000 QPS，超限返回 429 + 错误码 GW-429-001",
+            "请求体上限 10MB，超限返回 413",
+            "上游连接超时 1s，读超时 3s",
+        ],
+        failmodes=[
+            ("502/504 突增", "rb-gateway-5xx"),
+            ("连接数耗尽（worker_connections 打满）", "rb-gateway-conn-exhaust"),
+            ("TLS 证书过期导致全站不可访问", "rb-cert-expired"),
+        ],
+        note="网关是唯一不依赖 Spring 的服务，排查方式与 Java 服务完全不同：先看 nginx error.log，不要先看应用日志。",
+    ),
+    dict(
+        key="user-center",
+        name="用户中心",
+        domain="用户域",
+        stack="Java 17 / Spring Boot 3.2.5",
+        port="8081 / 9081 (management)",
+        replicas=6,
+        deploy="K8s Deployment user-center，命名空间 user",
+        repo="git.corp.example.com/user/user-center",
+        oncall="@user-oncall（用户域）",
+        health="/actuator/health，含 db 与 redis 探针",
+        runtime="-Xms2g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200",
+        slo_availability="99.9%",
+        slo_latency="P95 < 200ms",
+        slo_budget="5xx 错误预算 0.1%/月",
+        upstreams=["user_db(MySQL 8.0 一主两从)", "user-cache(Redis Cluster 6 节点)"],
+        mids=["Nacos 2.2", "Kafka 3.6（user-event-topic）"],
+        limits=[
+            "登录接口单账号失败 5 次锁定 15 分钟，错误码 UC-401-005",
+            "验证码接口单手机号 60s 限 1 次，错误码 UC-429-002",
+        ],
+        failmodes=[
+            ("登录接口大量超时", "rb-cache-penetration"),
+            ("缓存穿透导致 DB 压力飙升", "rb-cache-penetration"),
+        ],
+        note="用户中心是登录链路的瓶颈位，大促前必须做缓存预热，见 pol-capacity-preheat。",
+    ),
+    dict(
+        key="order-service",
+        name="订单服务",
+        domain="交易域",
+        stack="Java 17 / Spring Boot 3.2.5",
+        port="8082 / 9082 (management)",
+        replicas=8,
+        deploy="K8s Deployment order-service，命名空间 trade，HPA 4-16 副本",
+        repo="git.corp.example.com/trade/order-service",
+        oncall="@trade-oncall（交易域）",
+        health="/actuator/health",
+        runtime="-Xms2g -Xmx4g -XX:+UseG1GC；容器内存 limit 5Gi",
+        slo_availability="99.95%",
+        slo_latency="P95 < 400ms",
+        slo_budget="5xx 错误预算 0.05%/月",
+        upstreams=[
+            "order_db(MySQL 8.0，16 库 64 表分片，sharding-key=user_id)",
+            "order-cache(Redis Cluster)",
+            "Kafka 3.6（order-topic，12 分区）",
+        ],
+        mids=["Nacos 2.2", "Seata 1.7（分布式事务，AT 模式）"],
+        limits=[
+            "单用户下单 QPS 限 5，超限错误码 ORD-429-001",
+            "线程池核心 200 / 最大 400 / 队列 1000，队列满抛 ORD-503-002",
+        ],
+        failmodes=[
+            ("容器 OOMKilled 反复重启", "rb-pod-oomkilled"),
+            ("线程池队列打满请求被拒", "rb-threadpool-exhaust"),
+            ("下单耗时突增（慢 SQL）", "rb-mysql-slow-query"),
+            ("订单创建失败率上升（Seata 事务超时）", "rb-full-link-timeout"),
+        ],
+        note="订单服务堆内存只给了 4G，历史上有过内存泄漏（大对象缓存未清理），OOM 排查优先看 heap dump。",
+    ),
+    dict(
+        key="payment-gateway",
+        name="支付网关",
+        domain="支付域",
+        stack="Java 17 / Spring Boot 3.2.5",
+        port="8083 / 9083 (management)",
+        replicas=4,
+        deploy="K8s Deployment payment-gateway，命名空间 pay（禁用 HPA，固定副本）",
+        repo="git.corp.example.com/pay/payment-gateway",
+        oncall="@pay-oncall（支付域，7x24）",
+        health="/actuator/health",
+        runtime="-Xms4g -Xmx4g -XX:+UseG1GC",
+        slo_availability="99.99%（资金相关，最高等级）",
+        slo_latency="P95 < 800ms（含外部渠道往返）",
+        slo_budget="5xx 错误预算 0.01%/月",
+        upstreams=[
+            "payment_db(MySQL 8.0，一主一从，禁止跨库事务)",
+            "Kafka 3.6（pay-callback-topic，3 分区，compaction 开启）",
+            "外部渠道：微信支付 v3、支付宝开放平台、银联全渠道",
+        ],
+        mids=["Nacos 2.2", "Redis 7.2（支付幂等键，db 5）"],
+        limits=[
+            "渠道调用超时 3s；单渠道失败率 > 30% 触发熔断 60s",
+            "熔断期间降级为「排队中」异步受理，不直接报错",
+            "支付幂等键 TTL 24h，键格式 pay:idem:{order_no}",
+        ],
+        failmodes=[
+            ("渠道回调超时、订单状态不一致", "rb-pay-callback-timeout"),
+            ("证书过期导致渠道调用全部失败", "rb-cert-expired"),
+            ("上游全链路超时引发渠道熔断", "rb-full-link-timeout"),
+        ],
+        note="支付域禁止在排查时重启 Pod——会打断正在处理中的资金流水。所有操作走 rb 文档的第 3 步确认清单。",
+    ),
+    dict(
+        key="inventory-service",
+        name="库存服务",
+        domain="交易域",
+        stack="Java 11 / Spring Boot 2.7.18",
+        port="8084 / 9084 (management)",
+        replicas=6,
+        deploy="K8s Deployment inventory-service，命名空间 trade",
+        repo="git.corp.example.com/trade/inventory-service",
+        oncall="@trade-oncall（交易域）",
+        health="/actuator/health",
+        runtime="-Xms1g -Xmx2g -XX:+UseG1GC",
+        slo_availability="99.95%",
+        slo_latency="P95 < 150ms",
+        slo_budget="5xx 错误预算 0.05%/月",
+        upstreams=[
+            "inventory_db(MySQL 8.0)",
+            "stock-cache(Redis Cluster，key 格式 inv:stock:{sku_id})",
+        ],
+        mids=["Nacos 2.2"],
+        limits=[
+            "单 SKU 库存扣减走 Redis Lua 脚本保证原子性",
+            "热点 SKU 每秒超过 3000 次扣减触发热点探测，转本地缓存 + 异步落库",
+        ],
+        failmodes=[
+            ("库存扣减超时 / 死锁", "rb-mysql-deadlock"),
+            ("热点商品请求打满单分片", "rb-cpu-high"),
+        ],
+        note="库存是唯一仍跑 Java 11 的服务，升级排期在 Q4，排查时注意 Arthas 版本兼容性。",
+    ),
+    dict(
+        key="promotion-service",
+        name="营销服务",
+        domain="营销域",
+        stack="Python 3.11 / FastAPI 0.111 + SQLAlchemy 2.0",
+        port="8085 / 9085 (management)",
+        replicas=4,
+        deploy="K8s Deployment promotion-service，命名空间 promo",
+        repo="git.corp.example.com/mkt/promotion-service",
+        oncall="@mkt-oncall（营销域）",
+        health="/health",
+        runtime="uvicorn --workers 4；容器 limit 2Gi",
+        slo_availability="99.9%",
+        slo_latency="P95 < 500ms",
+        slo_budget="5xx 错误预算 0.1%/月",
+        upstreams=[
+            "promo_db(MySQL 8.0)",
+            "promo-cache(Redis Cluster，优惠券库存 key: promo:coupon:{activity_id})",
+            "规则引擎：本地 in-process（drools 已替换为 Python 规则表）",
+        ],
+        mids=["Nacos 2.2（Python 侧用 nacos-sdk-python）"],
+        limits=["单用户领券 QPS 限 3，错误码 PROMO-429-001"],
+        failmodes=[("大促领券瞬时流量打满", "rb-cache-avalanche")],
+        note="Python 服务没有 JVM，排查内存问题用 py-spy dump 而不是 jstack，别搞混。",
+    ),
+    dict(
+        key="search-service",
+        name="搜索服务",
+        domain="搜索域",
+        stack="Java 17 / Spring Boot 3.2.5 + Elasticsearch 8.11",
+        port="8086 / 9086 (management)",
+        replicas=4,
+        deploy="K8s Deployment search-service，命名空间 search",
+        repo="git.corp.example.com/search/search-service",
+        oncall="@search-oncall（搜索域）",
+        health="/actuator/health",
+        runtime="-Xms2g -Xmx2g -XX:+UseG1GC",
+        slo_availability="99.9%",
+        slo_latency="P95 < 600ms",
+        slo_budget="5xx 错误预算 0.1%/月",
+        upstreams=[
+            "ES 集群 es-prod（3 master + 6 data，索引 product_v7 别名 product）",
+            "Kafka 3.6（product-change-topic，索引同步用）",
+        ],
+        mids=["Nacos 2.2"],
+        limits=["单次查询 max_result_window 10000，深分页走 search_after"],
+        failmodes=[
+            ("ES 集群状态 yellow/red", "rb-es-cluster-red"),
+            ("索引写入堆积、查询变慢", "rb-mq-backlog"),
+        ],
+        note="product_v7 索引别名是 product，重建索引走 arch-es-reindex，不要直接改别名指向。",
+    ),
+    dict(
+        key="notify-service",
+        name="通知服务",
+        domain="基础架构",
+        stack="Go 1.21 + gin 1.9",
+        port="8087 / 9087 (management)",
+        replicas=4,
+        deploy="K8s Deployment notify-service，命名空间 infra",
+        repo="git.corp.example.com/infra/notify-service",
+        oncall="@infra-oncall（基础架构组）",
+        health="/healthz",
+        runtime="GOMAXPROCS=4；容器 limit 1Gi",
+        slo_availability="99.9%",
+        slo_latency="P95 < 1s（投递受理，不含渠道实际送达）",
+        slo_budget="5xx 错误预算 0.1%/月",
+        upstreams=[
+            "Kafka 3.6（notify-topic）",
+            "外部渠道：阿里云短信、SendCloud 邮件、极光推送",
+        ],
+        mids=["Redis 7.2（发送频控，db 6）"],
+        limits=[
+            "短信单手机号 10 条/分钟、20 条/小时，超限静默丢弃并记录",
+            "失败重试 3 次，间隔 1s / 5s / 30s（指数退避）",
+        ],
+        failmodes=[("消息积压导致通知延迟", "rb-mq-backlog")],
+        note="通知失败不阻塞主链路：所有渠道调用都是 fire-and-forget + 本地重试队列。",
+    ),
+    dict(
+        key="report-job",
+        name="报表任务",
+        domain="数据域",
+        stack="Python 3.11 / Celery 5.3 / Airflow 2.8 调度",
+        port="无 HTTP 端口（Worker 模式）",
+        replicas=3,
+        deploy="K8s Deployment report-worker，命名空间 data",
+        repo="git.corp.example.com/data/report-job",
+        oncall="@data-oncall（数据域）",
+        health="Celery 无 HTTP 健康检查，用 `celery -A report inspect ping` 探活",
+        runtime="并发度 4（prefork），容器 limit 4Gi",
+        slo_availability="99.5%（离线任务，容忍度高于在线服务）",
+        slo_latency="T+1 报表必须在每日 07:00 前产出",
+        slo_budget="任务失败率 < 0.5%",
+        upstreams=["report_db(MySQL 8.0 只读从库)", "Hive 数仓", "Redis 7.2（Broker 与 Backend，db 1）"],
+        mids=["Airflow 2.8（调度）"],
+        limits=["单任务最长 2 小时，超时自动 kill；同任务禁止并发实例（加分布式锁）"],
+        failmodes=[
+            ("报表任务重复执行产生脏数据", "rb-cron-duplicate"),
+            ("跑批超时未在 07:00 前产出", "rb-mysql-slow-query"),
+        ],
+        note="报表任务重复执行是历史高频事故（Airflow 重试 + Celery 无幂等），务必看 rb-cron-duplicate。",
+    ),
+    dict(
+        key="file-service",
+        name="文件服务",
+        domain="基础架构",
+        stack="Java 17 / Spring Boot 3.2.5",
+        port="8088 / 9088 (management)",
+        replicas=4,
+        deploy="K8s Deployment file-service，命名空间 infra",
+        repo="git.corp.example.com/infra/file-service",
+        oncall="@infra-oncall（基础架构组）",
+        health="/actuator/health",
+        runtime="-Xms1g -Xmx2g -XX:+UseG1GC",
+        slo_availability="99.9%",
+        slo_latency="P95 < 300ms（不含 CDN 回源）",
+        slo_budget="5xx 错误预算 0.1%/月",
+        upstreams=[
+            "MinIO 对象存储（4 节点纠删码，桶 upload-prod）",
+            "CDN（静态资源回源）",
+            "Kafka 3.6（file-event-topic，触发图片处理）",
+        ],
+        mids=["Nacos 2.2"],
+        limits=["单文件上限 100MB；分片上传分片大小 5MB"],
+        failmodes=[("上传失败率上升（MinIO 磁盘满）", "rb-disk-full")],
+        note="图片处理依赖 file-event-topic，若该 topic 积压，上传会成功但缩略图不生成。",
+    ),
+    dict(
+        key="risk-engine",
+        name="风控引擎",
+        domain="风控域",
+        stack="Java 17 / Spring Boot 3.2.5 + Drools 8.44",
+        port="8089 / 9089 (management)",
+        replicas=6,
+        deploy="K8s Deployment risk-engine，命名空间 risk",
+        repo="git.corp.example.com/risk/risk-engine",
+        oncall="@risk-oncall（风控域）",
+        health="/actuator/health",
+        runtime="-Xms4g -Xmx4g -XX:+UseG1GC；规则热更新走 KIE 扫描 60s",
+        slo_availability="99.99%（在交易关键路径上）",
+        slo_latency="P95 < 100ms",
+        slo_budget="5xx 错误预算 0.01%/月",
+        upstreams=["Redis 7.2（风控名单与计数，db 7）", "risk_db(MySQL 8.0)"],
+        mids=["Nacos 2.2", "Drools 规则仓库（GitOps，规则变更走 PR）"],
+        limits=[
+            "规则执行超过 100ms 直接放行（fail-open）并打点告警",
+            "名单查询超时 50ms，超时按「名单未命中」处理",
+        ],
+        failmodes=[
+            ("规则误杀导致正常用户被拒", "rb-risk-false-positive"),
+            ("风控超时拖慢下单链路", "rb-full-link-timeout"),
+        ],
+        note="风控采用 fail-open：宁可放过不可误杀。这条策略在事故复盘里被反复讨论，见 oncall-postmortem。",
+    ),
+    dict(
+        key="ops-agent",
+        name="智能运维助手",
+        domain="基础架构",
+        stack="Python 3.11 / FastAPI 0.111 + LangGraph 0.1",
+        port="8090 / 9090 (management)",
+        replicas=2,
+        deploy="K8s Deployment ops-agent，命名空间 infra，前置 nginx 负载均衡",
+        repo="git.corp.example.com/infra/ops-agent",
+        oncall="@infra-oncall（基础架构组）",
+        health="/healthz（只探本进程，不探 LLM 与向量库）",
+        runtime="uvicorn --workers 2；容器 limit 2Gi",
+        slo_availability="99.9%",
+        slo_latency="TTFT P95 < 1.5s，整段响应 P95 < 8s",
+        slo_budget="5xx 错误预算 0.1%/月",
+        upstreams=[
+            "Qdrant 向量库（知识库 collection: ops_kb, dim 1024）",
+            "Redis 7.2（两级缓存 + 会话记忆，db 0）",
+            "MCP Server（Java 实现，对接工单系统 ticket_sys / CMDB / 用户中心）",
+            "LLM 网关（DeepSeek-V3，OpenAI 兼容协议）",
+        ],
+        mids=["Prometheus + Grafana（指标）", "Langfuse（LLM 链路追踪）", "Locust（压测）"],
+        limits=[
+            "单请求 LLM 调用上限 3 次（含重写），超出直接降级",
+            "缓存命中直接返回，不走 LLM：命中时 TTFT < 50ms",
+            "意图路由：FAQ/闲聊走缓存直答，诊断类走完整 RAG，工具类走 MCP",
+        ],
+        failmodes=[
+            ("LLM 网关限流（429）", "rb-full-link-timeout"),
+            ("向量库不可用导致召回为空", "rb-es-cluster-red"),
+        ],
+        note="本服务即本项目自身。它是唯一同时依赖 LLM、向量库、缓存、MCP 四类外部依赖的服务，因此也是降级链设计最完整的服务。",
+    ),
+]
+
+
+# =====================================================================
+# 二、错误码字典（按服务分组）
+# 每条：(错误码, 含义, 触发条件, 处置建议, 是否可重试)
+# =====================================================================
+
+ERROR_CODES: dict[str, list[tuple[str, str, str, str, str]]] = {
+    "gateway": [
+        ("GW-429-001", "请求被限流", "单 IP 超过 100 req/s 或单接口超过 5000 QPS", "客户端退避重试；确认是否遭到爬虫或攻击，必要时封 IP", "可重试（退避 1s）"),
+        ("GW-502-001", "上游连接失败", "上游实例不可达或连接被拒（connect refused）", "检查上游 Pod 状态与 Nacos 实例列表，确认是否有实例被摘除", "可重试"),
+        ("GW-504-001", "上游读超时", "上游处理时间超过 3s 读超时阈值", "查看上游服务 P99 耗时；结合 rb-gateway-5xx 定位", "可重试（幂等接口）"),
+        ("GW-413-001", "请求体过大", "请求体超过 10MB 上限", "确认客户端是否重复上传；大文件走 file-service 分片接口", "不可重试"),
+        ("GW-503-001", "网关连接数耗尽", "worker_connections 打满（65535）", "紧急扩容副本 + 检查是否存在连接泄漏（keepalive 未复用）", "可重试"),
+    ],
+    "user-center": [
+        ("UC-401-005", "账号被锁定", "登录失败连续 5 次", "等待 15 分钟自动解锁，或走工单人工解锁", "不可重试"),
+        ("UC-429-002", "验证码请求过于频繁", "单手机号 60s 内重复请求验证码", "等待 60s 后重试", "可重试（60s 后）"),
+        ("UC-500-001", "用户库查询失败", "user_db 主库连接异常或慢查询超时", "检查 MySQL 连接池与主从延迟，见 rb-mysql-conn-pool", "可重试"),
+        ("UC-404-001", "用户不存在", "按 user_id 查询未命中", "确认 user_id 是否正确；跨环境数据不同步时属预期", "不可重试"),
+        ("UC-503-001", "缓存集群不可用", "Redis Cluster 槽位迁移中或有节点不可达", "检查 Redis 集群状态；缓存不可用时降级直查 DB", "可重试"),
+    ],
+    "order-service": [
+        ("ORD-429-001", "下单过于频繁", "单用户下单 QPS 超过 5", "提示用户稍后重试", "可重试（1s 后）"),
+        ("ORD-503-002", "订单处理线程池已满", "线程池队列 1000 打满，触发拒绝策略", "紧急扩容副本；检查是否有慢 SQL 占用线程，见 rb-threadpool-exhaust", "可重试（3s 后）"),
+        ("ORD-409-002", "库存扣减冲突", "并发扣减同一 SKU 库存，Redis Lua 返回失败", "客户端重试；若持续冲突说明热点 SKU，见 rb-cpu-high", "可重试"),
+        ("ORD-500-003", "订单落库失败", "order_db 分片写入异常或连接池耗尽", "检查目标分片健康度，见 rb-mysql-conn-pool", "可重试"),
+        ("ORD-504-001", "分布式事务超时", "Seata AT 模式全局事务超过 30s 未提交", "检查参与方响应时间；确认是否有事务悬挂，见 rb-full-link-timeout", "不可重试（需人工对账）"),
+    ],
+    "payment-gateway": [
+        ("PAY-402-101", "渠道返回余额不足", "上游渠道明确返回余额不足", "提示用户更换支付方式", "不可重试"),
+        ("PAY-504-101", "渠道调用超时", "渠道 HTTP 调用超过 3s", "查询渠道侧订单状态后再决定是否重试，避免重复扣款", "不可重试（先查单）"),
+        ("PAY-503-102", "渠道熔断中", "单渠道失败率超过 30%，熔断 60s", "请求排队受理，勿手工重推；等待熔断恢复", "可重试（60s 后）"),
+        ("PAY-409-103", "重复支付请求", "支付幂等键 pay:idem:{order_no} 已存在", "直接返回首次支付结果，属正常幂等保护", "不可重试"),
+        ("PAY-500-104", "对账文件解析失败", "渠道对账文件格式变更或下载失败", "检查渠道公告；重新拉取对账文件，必要时人工核对", "可重试（次日）"),
+    ],
+    "inventory-service": [
+        ("INV-409-001", "库存不足", "可用库存小于请求数量", "提示用户；确认是否有超卖风险", "不可重试"),
+        ("INV-500-002", "库存扣减死锁", "MySQL 事务相互等待，InnoDB 检测到死锁并回滚", "自动回滚后重试；频繁出现需优化扣减顺序，见 rb-mysql-deadlock", "可重试"),
+        ("INV-503-001", "库存缓存不可用", "Redis 集群节点异常", "降级为直查 DB 扣减（性能下降但保证正确）", "可重试"),
+        ("INV-400-001", "SKU 参数非法", "sku_id 为空或数量小于等于 0", "校验入参", "不可重试"),
+    ],
+    "promotion-service": [
+        ("PROMO-429-001", "领券过于频繁", "单用户领券 QPS 超过 3", "退避重试", "可重试"),
+        ("PROMO-409-001", "优惠券已领完", "活动券库存为 0", "提示用户；确认是否需要补充库存", "不可重试"),
+        ("PROMO-409-002", "优惠券已使用", "券状态非 unused", "查询券流水确认使用时间与订单号", "不可重试"),
+        ("PROMO-500-001", "规则计算异常", "规则表加载失败或表达式求值异常", "检查规则配置热更新日志，必要时回滚规则版本", "可重试"),
+    ],
+    "search-service": [
+        ("SEARCH-503-001", "ES 集群不可用", "集群状态 red 或节点全部不可达", "见 rb-es-cluster-red，优先恢复 master 选举", "可重试"),
+        ("SEARCH-504-001", "查询超时", "单查询耗时超过 3s（默认 timeout 3s）", "优化查询：加 filter、避免深分页、检查是否有大聚合", "可重试"),
+        ("SEARCH-400-002", "深分页非法", "from + size 超过 max_result_window(10000)", "改用 search_after 游标分页", "不可重试"),
+        ("SEARCH-503-002", "索引正在重建", "别名切换窗口期，索引短暂不可写", "等待重建完成；读取仍可用旧索引", "可重试（5 分钟后）"),
+    ],
+    "notify-service": [
+        ("NOTIFY-429-001", "渠道限流", "短信渠道返回流控错误", "指数退避重试（1s/5s/30s）", "可重试"),
+        ("NOTIFY-500-001", "渠道调用失败", "短信/邮件/推送渠道 5xx", "重试 3 次后进入死信队列，人工介入", "可重试"),
+        ("NOTIFY-400-001", "手机号格式非法", "号码不符合 E.164 规范", "校验手机号，丢弃并记录", "不可重试"),
+        ("NOTIFY-200-001", "触发频控静默丢弃", "单手机号超过 10 条/分钟或 20 条/小时", "属预期保护，不重试；如需强送达走工单申请", "不可重试"),
+    ],
+    "report-job": [
+        ("JOB-409-001", "任务重复执行", "同一任务并发实例（分布式锁未生效）", "见 rb-cron-duplicate：终止后发实例 + 数据回滚", "不可重试"),
+        ("JOB-504-001", "任务执行超时", "单任务超过 2 小时上限被 kill", "拆分子任务或优化 SQL；见 rb-mysql-slow-query", "可重试（修正后）"),
+        ("JOB-500-001", "从库读取失败", "只读从库连接异常", "切到备用从库；确认主从延迟", "可重试"),
+    ],
+    "file-service": [
+        ("FILE-413-001", "文件过大", "单文件超过 100MB", "走分片上传（分片 5MB）", "不可重试"),
+        ("FILE-507-001", "对象存储空间不足", "MinIO 集群磁盘使用率超过 95%", "见 rb-disk-full：清理或扩容", "不可重试"),
+        ("FILE-500-001", "分片合并失败", "分片编号不连续或 ETag 不匹配", "重新上传缺失分片", "可重试"),
+    ],
+    "risk-engine": [
+        ("RISK-403-001", "命中风控规则", "规则判定为高风险（非系统错误）", "查看规则命中详情；如为误杀走 rb-risk-false-positive 提单", "不可重试"),
+        ("RISK-504-001", "规则执行超时", "规则执行超过 100ms 阈值", "自动 fail-open 放行；检查规则复杂度与名单查询耗时", "不重试（已放行）"),
+        ("RISK-503-001", "名单服务不可用", "Redis 名单查询失败", "按未命中处理（fail-open）并打点告警", "不重试"),
+    ],
+    "ops-agent": [
+        ("AGT-429-001", "LLM 网关限流", "上游 LLM 返回 429", "切换到备用模型；若全部限流则降级为模板应答", "可重试（指数退避）"),
+        ("AGT-503-001", "向量库不可用", "Qdrant 连接失败", "降级：跳过召回，直接用 LLM 常识作答并标注「无知识库依据」", "可重试"),
+        ("AGT-504-001", "LLM 调用超时", "单次 LLM 调用超过 30s", "重试一次；仍失败则返回缓存答案或兜底文案", "可重试（1 次）"),
+        ("AGT-500-001", "MCP 工具调用失败", "Java MCP Server 返回错误或超时（3s）", "该工具标记为不可用，本轮不再调用，走无工具链路", "可重试"),
+        ("AGT-400-001", "问题为空或超长", "query 为空或超过 2000 字符", "提示用户缩短问题", "不可重试"),
+    ],
+}
