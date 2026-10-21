@@ -10,5 +10,9 @@ eval_output/
 .mypy_cache/
 data/raw/
 data/index/
+# trace 里有用户原始问题与答案（含全部检索依据），是本地产物，不进仓库
+data/traces/
+# 审计日志同理：含变更参数与操作人，是本地产物
+data/audit/*.jsonl
 db/
 qdrant_storage/

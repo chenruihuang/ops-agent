@@ -4,6 +4,10 @@
 > 私有化一键部署、多路召回 + 精排、两级语义缓存、全链路可观测。
 > 所有性能数字均来自本地可复现实验，测量条件随指标一并标注。
 
+**交付与学习材料**：`docs/DELIVERY_D2.md`（D2 验收清单 / 简历条目 / 3 分钟与 10 分钟讲解稿 / Demo Runbook / 高频追答）、
+`docs/STUDY_PLAN.md`（半天到一天的项目熟悉路线，按代码行号给读法）、
+`docs/STUDY_SANDBOX.md`（安全沙箱 90 分钟精读路线：闸门 / 凭据 / 图改道 / 12 道自测题）。
+
 ---
 
 ## 1. 为什么是这个场景
@@ -126,11 +130,21 @@ python -m scripts.eval_retrieval --backend bm25 --sweep   # 关键词路召回�
 python -m scripts.check_intent --min-accuracy 0.94        # 意图路由准确率（可进 CI 卡阈值）
 python -m tests.test_chunker                # 41 项
 python -m tests.test_indexing               # 76 项
-python -m pytest tests/                     # 全部 128 个测试函数
+python -m pytest tests/                     # 全部 193 个测试函数
 ```
 
 > 这一步的意义：切块策略调一次就要重跑一轮评估，如果每轮都要等模型加载 + 容器起停，
 > 一天改不了几次。把纯逻辑与外部依赖拆开，是能真正迭代的前提。
+
+### 3.2.1 看一条流式回答（带 session_id）
+
+```powershell
+python -m scripts.stream_chat "连接池耗尽的处置步骤是什么" --session demo-01 --no-cache
+python -m scripts.stream_chat "那 inode 耗尽呢" --session demo-01   # 同一会话，history_turns 应为 1
+```
+
+token 直接连成正文打在终端，`meta/route/docs/degraded` 压成一行摘要；
+`--show-frames` 逐帧打印原始 JSON（排障用），`--no-cache` 强制走完整链路。
 
 **不需要向量库在线的召回对比**（`--vector-source local` 走 build 落盘的 `vectors.bin`
 做暴力扫描，与走向量库是同一段代码）：
@@ -149,8 +163,22 @@ python -m scripts.bench_rerank --from-recall 20         # 重排代价：先实�
 | API 文档 | http://localhost:8080/docs |
 | Qdrant 控制台 | http://localhost:6333/dashboard |
 | Grafana | http://localhost:3001 （admin / admin123） |
-| Prometheus | http://localhost:9090 |
+| Prometheus | http://localhost:9091 （宿主 9091 → 容器 9090，见下方端口规划） |
 | Locust 压测 | http://localhost:8089 （需先 `dev.ps1 load`） |
+
+**宿主端口规划**（本机同时跑 cs-agent，端口必须错开）：
+
+| 用途 | 本项目 | 冲突方 | 备注 |
+|---|---|---|---|
+| 统一入口 | 8080 | cs-agent 8000 | nginx |
+| MySQL | 3307 | 本机 MySQL 3306 | 容器内仍是 3306 |
+| Grafana | 3001 | cs-agent 3000 | |
+| Prometheus | **9091** | **cs-agent 9090** | 容器内仍是 9090，Grafana 数据源不受影响 |
+
+> ⚠️ 端口冲突的表现很有迷惑性：`docker compose up -d` 会因**某个**容器
+> `port is already allocated` 而**中止整批启动**，其余容器停在 `Created` 状态
+> （`docker ps -a` 里状态是 `Created`、退出码 0，看起来"没报错"，实际一个都没起）。
+> 所以 `docker compose ps` 里出现 `created` 时，先查 `docker inspect <容器> --format '{{.State.Error}}'`。
 
 ---
 
@@ -175,13 +203,18 @@ python -m scripts.bench_rerank --from-recall 20         # 重排代价：先实�
 | 全栈编排（compose / nginx / Prometheus） | ✅ 已就绪 | 配置文件完整，未在真实 Docker 上端到端跑通 |
 | **三层记忆（工作 / 会话 / 长期事实）** | ✅ **已实现，测试覆盖** | 会话滑窗+事实外置 Redis（进程零会话状态）；记忆故障降级可见 `stage=memory`；吞吐数字待压测 |
 | **LangGraph 编排** | ✅ **已实现，SSE 协议逐帧对齐** | 10 节点状态机（路由/记忆/缓存/单飞/工具∥召回并行/生成），事件协议一字未改，端点级用例全部原样通过（见「LangGraph 编排与三层记忆」） |
-| Java MCP Server | 🚧 待实现 | D2 上午（工具层已按 MCP 契约留好接口） |
-| 熔断降级链 | 🚧 部分 | 缓存与检索层已有降级；熔断器待接 |
-| 压测脚本（TTFT） | ✅ 已就绪 | 事件流级 TTFT 测量，已改成运维语料 |
-| 故障注入 / MTTR 测量 | ✅ 已就绪 | 未在真实环境跑过 |
+| **全链路可观测** | ✅ **本地 + 云端均已验证** | 本地 JSONL 全量 + Langfuse 上报；10 个阶段 span、TTFT 三处同源、`trace_replay` 会话回放；`selftest --only trace` 16/16；真 key 下 `--send-test` + v2 API 核对到 12 条 observation（10 阶段 span 全上云，类型映射正确）。UI 截图未留（验证走 API），见 §6.x |
+| **Java MCP Server（Spring Boot 3）** | ✅ **已实现，协议验证** | `java-mcp/`：JSON-RPC 2.0 三方法（initialize / tools/list / tools/call）+ 5 个工具与 Python 侧 `TOOL_SPECS` 一致 + X-Chaos 故障注入；chaos 三态（500×2 后恢复 / hang / sleep）实测通过 |
+| **熔断 / 重试 / 降级链 + Skill 注册表** | ✅ **已验证** | `resilience.py`（三态熔断 + 白名单重试 + 显式降级链）+ `skills.py`（横向降级）；89 项断言；三场景实测：正常 / 抖动救回（attempts=3）/ 持续故障熔断开→mock 兜底 |
+| **安全沙箱（写操作人工确认）** | ✅ **已验证** | 风险分级 + 参数白名单 + 一次性凭据（Redis `GETDEL`）+ 审计日志；写工具 2 个（`restart_service` / `scale_service`，`simulated=true`）；`/chat/confirm` 续跑；84 项断言，见 §6.aa |
+| 压测脚本（TTFT） | ✅ 已就绪 | Locust 分段 10→120 用户 / 6 分钟，事件流级 TTFT；**本轮不引用绝对延迟**（共享 vCPU） |
+| **故障注入 / MTTR 测量** | ✅ **已验证（真跑过）** | `fault_drill.py` 多故障 × 多轮；实测 stop-redis：检测 19.4s、可用性 33.3%、请求耗时中位 31.8s（基线 ~4s）。修正了三处测量 bug，见 §6.z.3 |
+| **答案侧评估（RAGAS 口径）** | ✅ **已实测** | `run_eval.py`：recall 0.8785 / precision 0.7841 / anchor 0.8237（48 题有 golden） |
+| **Grafana 大盘** | ✅ 已生成，待人工目检 | 31 面板（含安全沙箱一行）；生成脚本 + 指标名守门测试（指标写错时 Grafana 只会画空线） |
+| **Java MCP 指标** | ✅ 已验证 | Actuator + Micrometer：`mcp_tool_calls_total` / `mcp_tool_seconds` / `mcp_chaos_total`，`/actuator/prometheus` 实测 200 |
 
-> 测试口径：`pytest tests/` → **128 个测试函数全部通过**；
-> 另外 **377 条 `check()` 型断言**（覆盖 13 个文件）已纳入 pytest 退出码。
+> 测试口径：`pytest tests/` → **193 个测试函数全部通过**；
+> 另外 **689 条 `check()` 型断言**（覆盖 20 个文件）已纳入 pytest 退出码。
 > 全部离线，不需 Docker / 模型。
 > 异步用例不需要 `pytest-asyncio` 也能跑（`tests/conftest.py` 兜底），装了则由
 > `pytest.ini` 的 `asyncio_mode = auto` 接管 —— 两条路径都验证过。
@@ -718,16 +751,27 @@ D1 阶段 Java MCP Server 还不存在，所以"探测失败就用 mock"；
 
 | 事件 | 时机 | 关键字段 |
 |---|---|---|
-| `meta` | 最先 | `cache`（exact/semantic）、`similarity`、`kb_version` |
+| `meta` | 最先 | `cache`（exact/semantic）、`similarity`、`kb_version`、`trace_id` |
 | `route` | 紧随其后 | `intent`、`reason`、`signals`、`entities` |
 | `tool_call` | 调用前 | `tool`、`args` |
 | `tool_result` | 每次返回 | `ok`、`source`、`elapsed_ms`、`summary` |
 | `tool_summary` | 全部结束 | `ok_count` / `total` |
-| `docs` | 检索完成 | `sources`、`pages`、`recall_sources`、`channels`、`fused` |
-| `token` | 流式正文 | `text` |
+| `docs` | 检索完成 | `sources`、`pages`、`recall_sources`、`channels`、`fused`、`scores`、`order_by`、`rank_scores` |
+| `token` | 流式正文 | `content`（逐片，前端直接 append） |
 | `degraded` | 任一环节降级 | `stage`、`reason` |
 | `error` | 致命 | `message` |
 | `done` | 收尾 | `cache`、`route`、`stage_ms`、`total_ms` |
+
+`docs.scores` 与 `docs.rank_scores` **不是一回事**，这是刻意分开的：
+
+- `scores` = 每块在**自己那一路**的原始分。向量是 cosine（0~1），BM25 无上界
+  （实测 `5.9818` 很常见）——量纲不同，放在一个数组里**本来就不单调**；
+- `order_by` + `rank_scores` = **真正决定顺序的那个分**：`rerank`（重排分）/
+  `rrf`（融合分，只看排名）/ `score`（单路退化）。要验证"排序生效"必须用它。
+
+用 `scores` 判断排序会得到一个非常像 bug 的假信号：实测
+`[0.6466, 0.7045, 0.6619, 5.9818, 4.833]` —— 顺序完全正确（RRF 融合），
+但前三个数确实不递减。
 
 三处非显然的设计：
 
@@ -740,6 +784,14 @@ nginx 默认 60 s 空闲就断连接，长回答（尤其带工具调用）会�
 `settings.kb_version` 是**进程启动时的快照**。`/admin/kb/burn` 把版本号 +1 之后，
 settings 里还是旧值 —— 于是 SSE 事件里的版本号会**撒谎**。
 它必须从缓存读运行时值。
+
+同一条道理也适用于探针，所以 `/health` 把字段改名为 `config_kb_version`（它真的只是
+快照），运行时值由 `/ready` 顶层 `kb_version` + `checks.cache` 报。改名直接来自一次
+自测日志：`/health` 说 1、SSE `meta` 说 2，同一个字段名指向两个值，看的人会以为 bump 没生效。
+
+`/ready` 的 `checks.cache` 还会在**索引版本 ≠ 缓存版本**时明说：`/admin/kb/bump`
+只动 Redis 不动 `data/index/kb_version.json`，bump 完没重建索引就等于全量冷启动 ——
+正确性没事，但"缓存为什么全 miss"必须能一眼看出来，而不是去翻 Redis key。
 
 **③ 闲聊短路：不走模型、不写缓存。**
 问"你好"也走一遍检索 + LLM 是纯浪费，而且回答不稳定。
@@ -763,14 +815,18 @@ settings 里还是旧值 —— 于是 SSE 事件里的版本号会**撒谎**。
 START → route ──chitchat──▶ chitchat → END
           │ main
           ▼
-     memory_load → embed → cache_lookup ──hit──▶ END
-                                │ miss
-                                ▼
-                           singleflight ──跟随者命中──▶ END
-                                │ 领跑者
-                                ▼
-                             dispatch ──┬──▶ tools ──┐
-                                        └──▶ recall ─┴─▶ generate → END
+     memory_load → cache_exact ──exact 命中──▶ END
+          │             │ miss（exact 命中不付编码费）
+          │             ▼
+          │           embed → cache_semantic ──semantic 命中──▶ END
+          │             │ miss（编码一次，语义缓存与向量召回共用）
+          │             ▼
+          │        singleflight ──跟随者命中──▶ END
+          │             │ 领跑者
+          │             ▼
+          │          dispatch ──┬──▶ tools ──┐
+          │                     └──▶ recall ─┴─▶ tools_done ──┬──▶ generate → END
+          │                                                   └──(有挂起)──▶ await_confirm → END
 ```
 
 **重构的验收标准是"SSE 事件协议一字不改"**：`tests/test_chat_sse.py` 的
@@ -883,6 +939,12 @@ python -m scripts.eval_matrix --vector-source qdrant --parity
 > `.\scripts\dev.ps1 kb`（`build-kb`，能联网下载），再起 `api`；
 > 否则 `api` 会以一个"模型加载失败"的姿态启动 —— 而这时容器本身是
 > healthy 的（健康检查只探 HTTP），要等第一个请求才会暴露。
+>
+> **判断与修复都有一条命令**：
+> `curl.exe -s http://localhost:8080/ready` 会直接报 `embedding_model.ok=false`
+> （这就是"假健康"的探针，`/health` 只代表进程活着）；
+> 本机已缓存模型的场景不必联网，`.\scripts\dev.ps1 models` 把宿主
+> `~/.cache/huggingface/hub` 灌进命名卷，再 `docker compose restart api` 即可。
 
 #### 单题召回延迟（同一轮、同一机器、52 题，P50）
 
@@ -1049,6 +1111,596 @@ python -m scripts.fault_inject --fault stop-qdrant --rounds 5
 
 ---
 
+## 6.x 全链路可观测：Langfuse + 本地 trace
+
+一条请求的完整链路，现在能被还原成下面这棵树（`--only trace` 实测输出）：
+
+```
+turn                        total 3435ms · TTFT 1784ms · route=rag · cache=miss
+├── route           1ms     intent=rag, conf=0.85, signals=[...]
+├── memory_load   194ms     history_turns=2, facts=3
+├── embed        1250ms     model=bge-small-zh-v1.5, dim=512
+├── cache_lookup    1ms     hit=miss
+├── singleflight    0ms     leader=true
+├── recall       1160ms     channels={vector:20,bm25:20}, n_chunks=5, order_by=rrf
+│   └── rerank              pool=20, kept=5          ← 最贵的一环，单独计量
+├── generate        981ms   model=deepseek-chat, ttft_ms=1784, first_token_offset=981
+├── cache_store   282ms     tokens_saved=1032
+└── memory_save    21ms     facts=2
+```
+
+### 三个设计决策（都是被实测逼出来的）
+
+**① 本地 JSONL 是一等公民，Langfuse 是可选上报。**
+
+没有 key 也必须能追踪，否则"埋点到底埋上没埋上"这件事就依赖云端才能验证。所以：
+本地 `data/traces/YYYY-MM-DD.jsonl` **全量**落盘（一个 span 一行），
+Langfuse 按 `OBSERVABILITY_SAMPLE_RATE` **采样上报**。方向不能反过来 ——
+本地也采样的话，"回放某次失败请求"就变成碰运气。
+
+**② 子 span 不依赖 OTEL 的 contextvar。**
+
+LangGraph 每个节点跑在独立 asyncio task 里，`with span:` 设的 current span
+**不会**传播到下一个节点。实测（langgraph 1.2.12 + langfuse 5.0.2）：
+
+```
+node turn     -> get_current_trace_id() = 47cd2454...
+node dispatch -> get_current_trace_id() = None      ← 丢了
+```
+
+所以子 span 一律用 `root.start_observation(...)` **显式挂 root**。
+同理，root 不用 `start_as_current_observation`（它的 `__exit__` 会在另一个
+Context 里执行，实测报 `Failed to detach context / Token was created in a
+different Context`），改用非 current 的 `start_observation` + 手动 `end()`。
+
+> **代价**：后端里 span 树是平的（root + N 个并列阶段）。逻辑父子关系
+> （`parent=dispatch`）写在 `metadata.parent` 与 JSONL 里，回放脚本按它还原层级。
+> 时间线（Gantt）是准确的，树深是 1 —— 这是取舍，不是疏漏。
+
+**③ 上报不许进关键路径。**
+
+实测：Langfuse 客户端**构造**在容器内 0.6s、Windows 宿主（SDK 5.0.1）**10~51s** 不等；
+`flush()` 连不上时 0.9s。所以：构造放 lifespan + **超时保护**（`LANGFUSE_INIT_TIMEOUT=10s`，
+超时就放弃上报）、flush 只在关机、请求路径上只做"建 span 对象"。
+
+### TTFT 埋在哪：三处同源
+
+TTFT **不是**一个孤立数字，是"生成开始 → 首 token"的区间。同一次测量写三处：
+
+| 消费方 | 字段 | 用途 |
+|---|---|---|
+| SSE `done.stage_ms.first_token` | 相对请求起点 | 前端展示、压测脚本采集 |
+| JSONL `turn.metadata.ttft_ms` | 相对请求起点 | 会话回放 |
+| Langfuse generation | `completion_start_time` | UI 的 Latency to First Token |
+| Prometheus | `ttft_seconds` 直方图 | 告警与 P95 |
+
+另有一个容易搞混的字段：`generate.metadata.first_token_offset_ms` 是**相对生成段起点**
+的首字延迟（本例 981ms），而 `ttft_ms` 是相对**请求起点**（1784ms）。
+拿前者去比 `span.duration_ms` 会得出"TTFT 比生成还慢"的怪结论 —— 这个坑本项目的
+测试用例踩过一次，现在两条断言分开钉。
+
+### 开销实测
+
+```powershell
+python -m scripts.bench_trace --rounds 500      # 一条命令重跑，别信文档里的陈年数字
+```
+
+口径：**一轮 = 1 turn 根 + 10 个阶段 span + 1 rerank + 2 工具 = 13 行**，
+每行同步 `write+flush`（`JsonlSink` 的设计选择），单线程串行 500 轮，对照组走
+`NullTurn`（埋点调用一行不少、只是不记录）。本机 Windows 11 / Python 3.12 / NTFS，
+**同一条命令独立跑八次**：
+
+| | P50 | P95 | max | 写出 |
+|---|---|---|---|---|
+| 埋点关（`enabled=False`） | 0.02~0.10ms | 0.03~0.16ms | 0.6ms | 0 |
+| 埋点开（本地 JSONL） | **0.64~2.05ms** | **2.4~10.5ms** | 16.4ms | 3.2MB / 500 轮（≈6.5KB/轮） |
+
+八次原始 P50：0.64 / 0.67 / 0.68 / 1.38 / 1.53 / 1.70 / 1.87 / 2.05ms。
+折算到一条 3.4s 的请求：**0.02%~0.06%**。
+
+> **为什么给区间而不是一个数**：波动不是代码在变，也**不能简单归因于"机器忙不忙"**——
+> 有两次是和 pytest 并行跑的（1.4~2.1ms），但另有两轮机器空着也测到 1.87ms 和 0.67ms。
+> 现象是：同一个 500 轮里所有 span 会**一起**偏快或偏慢（同一个新建目录落在杀软扫描窗口内、
+> 或 NTFS 日志压力大时整批都慢）。这是推断，不是定论，但足以说明：**单点数字没有意义，
+> 要么报区间，要么报分布**。真要压这条长尾，办法是按轮批量 flush（见 §11）。
+>
+> **数字变了，原因要交代**：早先记的是 P50 0.605ms / 2.4KB 每轮，那是"1 turn + 3 span
+> + 短答案"的口径，与真实链路（13 行、几百字答案、带 `rank_scores`/`top_sources`）
+> 不可比。换口径就换数字，**不沿用旧值**——沿用一个更漂亮的旧数比没有数更糟。
+>
+> 真正贵的是 Langfuse 构造（一次性）与 flush（关机），两者都不在请求路径上。
+
+### 接入 Langfuse（可选，15 分钟）
+
+```bash
+# .env
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com   # 自托管改成 http://<host>:3000
+```
+
+然后**先自检再重启**：
+
+```powershell
+python -m scripts.trace_doctor              # 配置 / 目录可写 / host 可达 / auth_check
+python -m scripts.trace_doctor --send-test  # 真的发一个 span（验证写入链路，不只认证）
+```
+
+`--send-test` 是唯一能证明"端到端通了"的动作：`auth_check` 只验认证，
+配额、project 配置、网络白名单都可能拦在写入这一层。
+
+> **本项目当前状态（2026-10-18 更新）**：**云端已验证** —— 真实 key 下
+> `trace_doctor --send-test` 构造通过（宿主机实测 16.5s，见下方 `LANGFUSE_INIT_TIMEOUT`
+> 的说明）、`auth_check` 通过、测试 span 发送成功；容器内发出真实请求后，
+> 用 Langfuse v2 API（`/api/public/v2/observations`）核对到 **12 条 observation**：
+> 一轮 10 个阶段 span 全部在云端，`embed`→EMBEDDING / `recall`→RETRIEVER /
+> `generate`→GENERATION 类型映射正确，`session_id` 正确传递（Sessions 视图可按会话归组）。
+> 本地 JSONL 全链路照旧（`selftest --only trace` 16/16）。
+>
+> 两个如实记录：① **UI 截图没有** —— 验证走的是 API（脚本里没有浏览器），你在
+> UI 看到 trace 后这一步才算对你自己闭环；② 容器日志偶发 OTEL
+> `Failed to detach context`（15 分钟 2 请求出现 1 次），已确认为 SDK 内部噪音：
+> 同一时段云端 12 条 observation 完整，detach 失败不影响上报，已在
+> `tracing.py` 里降为 DEBUG 并附证据注释（`tests/test_tracing.py` 有对应锁行为的用例）。
+>
+> **重要：云端可见性有分钟级延迟**。2026-10-18 实测：请求结束后本地 JSONL 立即全量
+> （10 行），但云端先是只有 turn 根 span，**1~3 分钟后 10 条子 span 才陆续出现**
+> （batch exporter 的 flush 节奏，非配置错误 —— 容器内最小复现 root+child 两个都能
+> 即时 flush 上云）。所以**不要在请求结束后立刻刷新 UI 下结论**；本地回放
+> （`trace_replay`）永远是实时的，这也是"本地全量是一等公民"的又一个理由。
+
+### 会话回放（不依赖 Langfuse）
+
+```powershell
+python -m scripts.trace_replay --list-sessions           # 有哪些会话
+python -m scripts.trace_replay --session sess-6a6b9d39   # 逐轮时间线 + 甘特条
+python -m scripts.trace_replay --last 3                  # 最近 3 轮（跨会话）
+python -m scripts.trace_replay --trace 970bcce7          # 单轮（用 meta 帧里的 trace_id）
+python -m scripts.trace_replay --session xxx --md replay.md   # 导出 markdown 贴文档
+```
+
+`meta` 帧里带 `trace_id`（新增字段，老前端会忽略），所以从一次**慢请求**到
+一次**可回放**是闭环的：屏幕上看到 trace_id → 直接 `--trace` 或去 Langfuse 搜。
+
+Langfuse 侧靠 `session_id` 归组（`propagate_attributes(session_id=...)` 写在 root span 上），
+Sessions 视图里能看到同一会话的多轮。
+
+### 排障口诀
+
+| 现象 | 先看这里 |
+|---|---|
+| `data/traces/` 空 | `OBSERVABILITY_ENABLED`；容器内 `/app/traces` 是否可写（`/app/data` 是只读的） |
+| 有文件但没 `turn` | 请求被客户端提前断开 → 兜底 `finish(status="aborted")` 应补上；若仍缺，查 `Tracer._emit` 的异常日志 |
+| 本地有、Langfuse 没有 | `trace_doctor`：key / host / 采样率；401 = key 与 host 不匹配 |
+| 启动慢十几秒 | Langfuse 构造在等网络（SDK 5.0.1 实测 10~51s）→ `LANGFUSE_INIT_TIMEOUT` 已兜底，或先 `trace_doctor` |
+| 回放里某个阶段标 `!` | `status_message` 给了原因；`rerank:disabled` 是**配置的必然结果**，不是故障 |
+
+---
+
+## 6.y 高可用：熔断 / 重试 / 降级链 · Skill 注册表 · Java MCP Server
+
+### 6.y.1 韧性内核：顺序错了就全错
+
+```
+breaker（外层，快速失败）
+  └─ retry（内层，只吃"抖动"）
+       └─ 真实调用（HTTP / JSON-RPC）
+```
+
+- **retry 在内**：一次抖动靠重试吃掉，不能计成熔断失败；
+- **breaker 在外**：只有"重试用尽仍失败"才算一个失败信号。反过来会让三次重试
+  直接把熔断阈值打满——明明只是抖了一下，熔断却开了；
+- **熔断打开后不再重试**：`allow()` 微秒级拒绝，把 3 × 2s 的超时代价压成 0。
+
+重试是**白名单**（`TransientToolError` / 超时 / 连接错误 / 5xx），默认不重试——
+"参数错了也重试三次"只会把一次失败变成三次失败加三倍耗时。
+
+熔断器是三态机（closed → open → half_open，半开只放 1 个探测防止恢复雪崩），
+实现自研而不用 pybreaker/tenacity：同步包装异步比自研更厚，且拿不到
+"这几次尝试算一个熔断失败"的边界；时钟与 sleep 可注入，测试不用真等冷却。
+
+降级有**两个维度，别混为一谈**：
+
+| 维度 | 解决什么 | 实现位置 |
+|---|---|---|
+| **纵向**：同一工具的多数据源 mcp → cache → mock → 失败 | "这个数据源不健康" | `resilience.run_chain`，每一跳记 `Hop`（outcome / 耗时 / attempts） |
+| **横向**：同一意图的多条查询路径 by_no → by_keyword → by_service | "参数没命中但意图还能用别的方式满足" | `skills.py` 的 fallback 步骤 |
+
+只做纵向：MCP 一挂全线退 mock，答案里全是假数据；只做横向：换个查询方式
+重试一个已经宕掉的依赖，纯属浪费。**ToolResult.chain 把整条链记进返回值**
+——用户看到"工单查不到"，回放里能回答"为什么查不到"。
+
+### 6.y.2 Skill 注册表：声明式的能力目录
+
+- **Tool vs Skill**：Tool 是一次 IO 调用；Skill 是"一个业务意图怎么被满足"
+  （定位工单 = 按单号查 → 查不到按关键词捞 → 再不行按服务兜底）。
+- **匹配是确定性的**：按 `requires` 命中数降序、同分按声明顺序。不做模糊打分——
+  "这次为什么走了 ticket_diagnosis"在线上必须能一句话回答。
+- **串行执行 + 整体预算**：`budget_ms` 是整条 skill 的上限，超了带着已有结果返回
+  并标 `budget_exhausted`；每一步的参数模板填不满就跳过（不构造空参数去查）。
+- **YAML 声明、代码兜底**：Skill 是配置不是代码，运维加一条查询顺序不该改 Python；
+  YAML 损坏/为空/步骤缺失都整体退回 `DEFAULT_SKILLS`（部分生效比全不生效更难排查），
+  且 WARNING 出声——静默退回会让你以为新配置生效了。
+
+### 6.y.3 Java MCP Server（`java-mcp/`）
+
+Spring Boot 3 + Java 17，单端点 POST `/mcp` 三个 JSON-RPC 2.0 方法
+（initialize / tools/list / tools/call），GET `/health` 供探测。
+5 个工具与 Python 侧 `TOOL_SPECS` 一一对应（渲染格式逐字段对齐，含 `appendIf` 过滤 null 噪音）。
+多阶段 Dockerfile（maven 构建 → jre 运行）。
+
+**X-Chaos 故障注入**（请求头，仅测试/演示用）：`X-Chaos: error=500,times=2` /
+`X-Chaos: hang=60000` / `X-Chaos: sleep=1200`，计数器带时间窗重置（防跨请求残留误判）。
+这是"故障注入下的请求成功率"这个指标能测的前提——没有注入就没有可复现的故障。
+
+**自检入口：`python -m scripts.mcp_probe`**（19 条断言，含 chaos 三态，可直接进 CI）。
+不是"多写一个脚本"，而是因为**手敲 curl 在这台机器上一定会失败**：
+
+```powershell
+# PS 5.1 下必然 400（服务端只看到 Required request body is missing）
+docker exec ops-agent-java-mcp-1 sh -c 'curl ... -d "{\"jsonrpc\":\"2.0\",...}"'
+```
+
+PowerShell 把整段 `sh -c '...'` 当**一个**参数传给 `docker.exe` 时，会用双引号包起来
+却不转义内层双引号——内层引号把参数劈开，curl 根本没收到 body。同一命令在 bash 里 200、
+在 PS 5.1 里 400，**错误信息指向服务端，实际坏在客户端**。
+脚本用 argv 列表 + `--data-binary @-`（body 走 stdin），全程无 shell 拼接。
+另外两个坑也一并绕掉：① 宿主机 **8080 是 nginx 的**（统一入口 → FastAPI），
+`localhost:8080/mcp` 必然 404 且返回体是 FastAPI 形状的 `{"detail":"Not Found"}`；
+java-mcp 的调试端口单独用 `18081:8080`（见 compose 的 `ports`），用 `--url` 指过去即可；
+② 服务端耗时必须取 curl 的 `%{time_total}`——Docker Desktop 上 `docker exec` 每跳自付 1~3.4 s，
+用墙钟会把 `sleep=400` 的注入淹没在噪声里。
+
+**用 Postman 直连调试**（`18081` 只给本机开，生产/演示流量仍走 nginx 8080）：
+
+| 项 | 值 |
+|---|---|
+| URL | `http://127.0.0.1:18081/mcp` |
+| Method | `POST` |
+| Header | `Content-Type: application/json`（可选 `X-Chaos: error=500,times=2`） |
+| Body | raw / JSON：`{"jsonrpc":"2.0","id":1,"method":"tools/list"}` |
+| 探活 | `GET http://127.0.0.1:18081/health` → `{"status":"ok","tools":5}` |
+
+> 两个 `/health` 都返回 200，**只有响应体能分辨打到了谁**：java-mcp 带 `tools`，
+> FastAPI 带 `model`/`prompt_version`。`mcp_probe` 已把这条做成断言
+> （`/health 带 tools 字段`），否则打错端口时前面的检查会全绿、只在 RPC 上莫名其妙 404。
+> 同理，`{"detail":"Not Found"}` 是 FastAPI 的 404 形状，Spring 的 404 带 `timestamp`/`path`。
+
+### 6.y.4 实测三场景
+
+| 场景 | 注入 | 表现 |
+|---|---|---|
+| 正常 | 无 | `source=mcp`，一次成功 |
+| 抖动 | error=500,times=2 | retry 第 3 次救回，`attempts=3`，`source=mcp` |
+| 持续故障 | error=500,times=999 | 重试用尽 → 熔断 closed→open → 后续请求微秒级拒绝 → `source=mock`（chain 里可见 `circuit_open` 跳） |
+
+冷却到期后 half_open 探测成功 → 回 closed，恢复正常。
+
+### 6.y.5 两个已修复的接线 bug（比设计更值得记）
+
+1. **注入的 provider 不该被迫知道熔断器**：测试里的假 MCP 没有 `.breaker` 属性，
+   生产代码直接 `mcp.breaker.is_open` 抛 AttributeError——且发生在降级链**之外**，
+   把整次调用打挂（mock 兜底都没接到）。注入点上的属性一律 `getattr` 防御。
+2. **测试意图要跟着架构走**：skill 命中先于工具计划后，"计划为空"不再等于"没有工具"。
+   原 no_plan 测试的句子恰好命中 ticket_diagnosis，tool_call 帧来自 skill 步骤——
+   测到的不是它声称的逻辑。修法不是改断言，而是给 registry 换空 skill 注册表，
+   把"计划为空"分支真正隔离出来。
+3. **"未命中"不等于"降级"**：降级链把缓存未命中记成 `not_ok`，于是健康路径的
+   `tool_result` 每条都带 `degraded_from:["cache"]`（实测，见下）——读事件的人只能
+   得出"缓存一直是坏的"。缓存 miss 是正常运营事件（新 key 第一次必然 miss），
+   单独记 `outcome="miss"`，`degraded_from` 只报真正失败的那几跳：
+
+   ```json
+   改前：{"source":"mcp","breaker":"closed","degraded_from":["cache"]}   ← 每条正常调用都长这样
+   改后：{"source":"mcp","breaker":"closed"}                             ← 只有真降级才带
+   ```
+
+
+---
+
+## 6.z 五大指标：怎么测、测到了什么（D2 下午）
+
+### 6.z.1 一张表：指标 ↔ 工具 ↔ 口径
+
+| 指标 | 工具 | 口径（必须一起报） |
+|---|---|---|
+| 系统可用性 | `scripts/fault_drill.py` | **故障注入下的请求成功率**（收到 token 即成功），不是 SLA |
+| TTFT | `loadtest/locustfile.py` + `run_eval` | 相对请求起点；缓存命中与否分开看 |
+| 并发数 | `loadtest`（staged 10→120 users） | 报告必须带并发数与压测时长 |
+| 上下文召回率 | `scripts/eval_matrix.py` + `scripts/run_eval.py` | **文档级**；严格口径（非图谱扩展） |
+| 缓存命中率 | `/metrics` → Grafana | hit/(hit+miss)，`rejected` 不算 miss |
+
+### 6.z.2 答案侧评估：RAGAS 口径的确定性实现（`scripts/run_eval.py`）
+
+`ragas` 库在本机装不上（pip 离线）。与其编一组"看起来专业"的分数，不如只实现
+**不需要 LLM judge** 的部分，并把口径差异写清楚：
+
+- `context_recall`：**文档级**，与检索评估同口径；
+- `context_precision`：文档级 AP（相关文档排得靠前才高分）；
+- `anchor_hit_rate`：答案是否包含标注的关键事实（`ORD-429-001`、`5`、`QPS`）。
+  **这不是 faithfulness**：它只回答"事实有没有出现"，不回答"是否被 context 支撑"；
+- `abstention_ok_rate`：只对"rag/hybrid 且无 golden"的题计（该弃答的题）。
+
+实测（2026-10-18 20:00，52 题 / 48 有 golden，容器镜像 2026-10-17 18:41）：
+
+| 指标 | 值 | n |
+|---|---|---|
+| context_recall | **0.8785** | 48 |
+| context_precision | 0.7841 | 48 |
+| anchor_hit_rate | 0.8397 | 52 |
+| TTFT p50 | 2298 ms | 52 |
+| total p50 / p95 | 4054 / 6323 ms | 52 |
+| degraded_rate | 0.0 | 52 |
+
+两个值得说的点：
+
+1. **`context_recall` 与检索评估的 serving 口径 0.8785 逐位相同** —— 两条独立测量
+   （检索评估直连召回 vs 答案评估走完整 SSE 链路）给出同一个数，说明评估确实在测
+   线上那条路径。这不是巧合能凑出来的。
+2. **`degraded_rate = 0`**：`rerank:disabled` 是配置的必然结果，被显式排除在降级之外。
+   否则这个指标恒为 1.0，等于没有指标（真实踩过）。
+
+### 6.z.3 故障演练：MTTR 不是"再造一遍故障的时间"
+
+`scripts/fault_drill.py`：多类故障 × N 轮，每轮 `finally` 恢复容器并等健康检查。
+
+```
+T1 注入 · T2 告警 firing · T3 连续 3 次收到 token
+MTTR = T3 - T2    检测延迟 = T2 - T1    端到端 = T3 - T1
+```
+
+三个**实测踩出来的坑**（都已修，这才是这一节真正的价值）：
+
+| 坑 | 表现 | 修法 |
+|---|---|---|
+| 告警引用了不存在的指标 | 停 Redis 后 `CacheDegraded` 永不 firing → T2 只能回填 T1 → MTTR 变成端到端时间的别名 | 表达式改为 `cache_requests_total{result="error"}`（manager.py 里真实打点的那个） |
+| 检测窗口里没有流量 | 错误率类告警靠 `rate(...)` 计算，没有请求就恒为 0，窗口再长也测不到 | 检测循环里**持续发请求**（也更像真实用户） |
+| **多 worker 导致计数器分裂** | `uvicorn --workers 2`：每个进程一份 REGISTRY，`/metrics` 只返回命中那个 worker 的计数。实测容器内 3 与 2，Prometheus 只看到 1 → 告警时有时无、曲线像心电图 | 改为 1 worker × N 副本（无状态服务按副本扩；或用 multiprocess 模式） |
+| **探针打到了缓存** | `use_cache` 默认 true 时，探测 0.3s 命中旧答案、可用性 100% —— 故障被缓存完全遮住，召回路径根本没被碰到 | 演练探针固定 `use_cache=false`（测冷路径），并在报告里写明 |
+| **采样频率低于信号持续时长** | 故障时单次请求 30s，探测循环 30s 才轮询一次告警，而告警在 1 分钟 `rate()` 窗口里只 firing 十几秒 → 完美错过 | 告警检测拆成独立线程（1s 一次），与探测解耦 |
+
+还有一条口径红线：**检测失败时 T2 不做事后回填**。回填让报告有一个漂亮的 MTTR，
+但那个数不存在；宁可报 `—`（未检测到）。
+
+**缓存故障的真实伤害是延迟，不是可用性**：实测停 Redis 期间可用性掉到 33%、
+单次请求耗时中位 31.8s（基线 ~4s，Redis 连接超时 × 两次重试）；
+而停 Qdrant 因为能退到 BM25，可用性仍 100%，只是耗时升到 6.8s。
+
+实测（2026-10-18 20:36~20:44，本机 Docker Desktop，2 副本，各跑 1 轮）：
+
+| 故障 | 可用性 | 检测延迟 | MTTR (T3−T2) | 端到端 | 请求耗时中位 | 解读 |
+|---|---|---|---|---|---|---|
+| stop-redis | 33.3% | 19.4s | — | — | 31.8s | 无熔断路径，恢复依赖 Redis 本身；每个请求都付两次连接超时 |
+| stop-qdrant | 100% | 16.5s | **22.8s** | 39.3s | 6.8s | 退到 BM25 仍能答，**MTTR 描述的是"恢复到无降级"** |
+
+> 单轮不是结论。5 轮要看中位与范围（`--rounds 5`），且要一起报机器条件。
+
+### 6.z.4 Grafana 大盘（`monitoring/grafana/`）
+
+`build_dashboard.py` 生成 `dashboards/ops-agent.json`（27 个面板/行），
+覆盖：流量自检、请求成功率、TTFT p50/p95、分阶段 P95、缓存命中率/相似度分布/护栏拒绝/token 节省、
+熔断状态、工具来源（mcp/cache/mock）、重试与降级跳数、RAG 评估 gauge、Java MCP 指标。
+
+为什么用生成脚本而不是手写 JSON：**指标名写错时 Grafana 不报错，只画一条空线**，
+而"没流量"和"名字写错"在排障时方向相反。`tests/test_dashboard_metrics.py` 会
+把表达式里的每个指标名对回 `metrics.py` / Java 源码，并校验 datasource uid。
+
+**"大盘没数据"的三种成因，必须先分清**（三种都表现为空面板）：
+
+| 现象 | 真因 | 处理 |
+|---|---|---|
+| 整盘空，`⓪ 近 5 分钟请求数` = 0 | 只是没流量（`rate()`=0、分位数为 NaN） | 发一条请求；时间窗拉到有流量的时段 |
+| 单个面板永远空 | 指标只定义、没人写（死面板） | 守门断言「每个被引用的指标都有写入点」 |
+| 面板 `No data` 且 `抓取目标存活`=0 | 该 job 没被 Prometheus 抓到 | 看 `/api/v1/targets` |
+| 整盘空，**但压测刚跑过** | 数据源 uid 不匹配：provisioning 后改的 `uid:` 对**已存在**的数据源不生效，真实 uid 仍是自动生成的 —— 查询全失败，而 noValue 把失败渲染成"无流量" | `POST /api/admin/provisioning/datasources/reload`，然后 `GET /api/datasources` 确认 uid= `prometheus` |
+
+顶行 ⓪ 与"请求成功率"用的是 **`chat_requests_total`**（HTTP 层，含缓存命中与客户端断连）。
+不能用 `llm_requests_total` 当请求数：那是 LLM 调用数，语义缓存命中时不发生调用 ——
+命中率 75% 的压测里，nginx 明明转发了一千多条请求，顶行却写着"无流量"（实测踩过）。
+
+为此做了三件事：
+1. **顶行 ⓪ 流量自检**（近 5 分钟/近 1 小时请求数 + 活动时间线），空盘时先看它；
+2. **每个面板都设 `noValue`**：显示"无流量"而不是 Grafana 默认的 "No data" —— 后者与
+   "PromQL 写错"完全同形；
+3. **去掉比例面板的 `clamp_min(分母, 1e-9)`**：它把 0/0 兜成 0，于是空闲时
+   "请求成功率"写着 **0%**，看图的人会以为服务全挂了。现在 0/0 = NaN = "无流量"，
+   "没发生"和"发生了且失败"能分开。
+
+**评估产物怎么进大盘**：`scripts/run_eval` 是独立进程，它 set 自己的 REGISTRY 没人抓
+（面板会永远空）。所以走 `POST /admin/eval/metrics` 写进 api 进程：
+
+```powershell
+python -m scripts.run_eval --out eval_output/answers_full.json --publish
+python -m scripts.run_eval --rescore eval_output/answers_full.json --publish   # 只重打分也可刷
+```
+
+端点只写"算出来的项"（`None` 直接跳过，不写 0），且比例越界（>1）直接 422 ——
+历史踩过 AP 未按文档去重算出 `1.3133`，这种数画到仪表盘上不会报警，只会误导。
+**抽样（`--limit`）结果刻意不写大盘**：让 8 题的 0.9 覆盖 48 题的 0.8785 比空着更糟。
+
+gauge 是进程内的，`docker compose up -d api` 一次就清零 —— 于是发布时会同时落盘
+`data/traces/eval_metrics.json`，启动时 `restore_eval()` 回填。实测重启后三个格子仍是
+`0.8785 / 0.7841 / 0.8237`，不需要重新跑评估。
+
+### 6.z.5 压测（Locust）
+
+```
+locust -f loadtest/locustfile.py --host http://localhost:8080 --headless \
+  --csv eval_output/load --html eval_output/load.html
+```
+
+`StagedShape` 固定在 6 分钟内 10→120 用户，退出时打印缓存分布、路由分布、**按原因拆开的降级**，
+以及**分 label 的 TTFT**（`hot` = 缓存命中路径，`cold` = 真实链路）。
+
+两个口径必须守住，否则数字只能吓人：
+
+1. **TTFT 不能混算**。hot 与 cold 是两个分布，混在一起的 P95 是混合物分位数 ——
+   25% 的 miss 长尾能把整体 P95 拖到 130s，而这个数既不代表"缓存有多快"，
+   也不代表"真实链路有多快"。（实测：同一轮里 hot 命中约 2s、cold 首 token 约 11s。）
+2. **配置不等于降级**。`RERANK_ENABLED=false` 以前每道题都发一条 `degraded`，
+   于是压测里"降级次数"恰好等于"缓存未命中次数"（72 miss → 72 degraded），
+   看着像依赖不稳，其实是配置。现在改成 `notice(code=rerank_disabled)`：
+   可见，但不算故障。压测输出按原因拆分，`degraded` 应为 0 或指向真实依赖。
+
+**绝对延迟不可引用**（共享 vCPU 上同一条标尺实测漂 7.5 倍），只报同轮内相对差异与质量指标。
+报"最大并发"必须按 `错误率 < 1% 且 TTFT P95 < 3s` 分档，且 hot/cold 分别报。
+
+**多副本 ≠ 真负载均衡，除非 nginx 会重新解析**。nginx 对 upstream 主机名只在启动时解析一次：
+实测 50 分钟内 1561 条 `/chat` 全部落在同一副本，另一副本 0 条 —— `--scale api=2` 在
+Prometheus 里一眼就能戳穿（只有一个实例有业务指标序列）。`nginx.conf` 已改为
+Docker 内嵌 DNS（`resolver 127.0.0.11 valid=5s`）+ 变量 `proxy_pass`：每 5s 重解析、
+扩缩容/重建换 IP 都能跟上。验证方法：压测后比对两副本的 `chat_requests_total`。
+
+**已修复的瓶颈（D4，2026-10-20）**：旧图 `node_embed` 排在 `node_cache_lookup` **之前**，
+exact 命中也先付一次 BGE 编码。实测（10→120 阶梯，2 副本 × 1 worker）：
+`stage_seconds` p50 → `embed_query 6.33s` / `recall 0.50s` / `generate 0.17s`；
+对应 `TTFT[hot] P50 6668ms` ≈ `TTFT[cold] P50 6425ms` —— 命中的优势被排队吃干。
+
+**修法**：缓存拆成两段节点 `cache_exact →（未命中）→ embed → cache_semantic`。
+exact 查询只是一个 Redis GET，命中请求**根本不进编码**；编码只由未命中请求支付，
+其结果同时供语义缓存与向量召回共用（一次编码两处受益）。真机验证（同一台宿主机）：
+
+| 路径 | 修复前 | 修复后 |
+|---|---|---|
+| exact 命中 TTFT | ≈ cold（P50 6668ms，负载下） | **21–26ms**（单请求实测） |
+| 命中请求 trace | 含 `embed` 段 | 只有 `route → cache_exact`（0.55–0.66ms），**无 embed 段** |
+| miss 请求 | embed 照付 | 照付（编码供语义缓存+召回共用，未变差） |
+
+守护测试：`tests/test_chat_sse.py::test_exact_cache_hit_skips_embed`
+（exact 命中时 `embed_one` 被断言不许调用）；图拓扑 13 节点由
+`tests/test_orchestrator_graph.py` 钉住。绝对延迟不可跨环境引用（共享 vCPU），
+只报同机相对差异。
+
+---
+
+## 6.aa 安全沙箱：写操作必须人工确认（D3）
+
+前面所有工具都是**只读**的（查工单/资产/告警）。加两个写工具（`restart_service` /
+`scale_service`）之后，风险的性质变了：只读工具错了顶多答非所问，写工具错了是
+**生产事故**，而调用方是一个会幻觉、会被文档字样带偏、会被用户一句话说动的 LLM。
+
+把模型输出直接变成运维命令的输入，是这套系统唯一不能接受的设计。
+所以写工具在执行前要过一道闸门：**策略校验 → 人工确认 → 审计**。
+
+### 四条边界（缺任何一条都能被绕过）
+
+| # | 边界 | 实现位置 | 被绕过的后果 |
+|---|---|---|---|
+| 1 | **策略先于执行** | `sandbox.validate_call`（参数白名单 + 值白名单） | 让人去确认一条非法命令 = 把风险转给人 |
+| 2 | **确认绑定参数** | 参数只从待办记录读，**不从请求体读** | 「确认过 A 却执行了 B」 |
+| 3 | **一次性 + 过期** | Redis `GETDEL` + TTL | 同一句"重启"被执行两次 |
+| 4 | **留痕** | `data/audit/sandbox.jsonl` + `sandbox_decisions_total` | 「人工确认」变成了弹了个窗 |
+
+第 2 条是整套设计的核心。`POST /chat/confirm` 的请求体**只有 `{token, approve, session_id}`**
+—— 没有 `tool`、没有 `args`。要执行什么由服务端从待办记录里读。只要接口留一个 `args` 字段，
+"确认了 A 却执行 B"就立刻退化成"前端传错参数"级别的 bug，而这是安全边界，不该有这种 bug。
+
+`app/tools/__init__.py::_sandbox_gate` 是唯一收口：闸门放在 `_make_handler`（所有工具调用的
+必经之路），而不是 `node_tools` / `planner` —— 放在上游，早晚会有一条新路径忘记加。
+
+### 一次交互 = 两个请求
+
+```
+POST /chat/stream {"message":"帮我重启 order-service"}
+  → meta → route(needs_write=true)
+  → tool_call(query_alerts_by_service) → tool_result      ← 先读现场
+  → tool_call(restart_service) → tool_result(status=pending_confirmation)
+  → confirm_required {token, tool, args, risk, expires_in, confirm_hint}
+  → done {status:"awaiting_confirmation", pending:[...]}     ← 本轮结束，**不生成答案**
+POST /chat/confirm {"token":"...", "approve":true}
+  → {"ok":true, "status":"executed", "tool":"restart_service", "simulated":true, "text":...}
+```
+
+**复合诉求（既要执行又问知识）走同一套契约，但会先答能答的**：
+
+```
+POST /chat/stream {"message":"帮我重启order-service,并查一下oom怎么办"}
+  → route(hybrid, needs_write=true)                        ← 分句判知识，写操作没被吞
+  → tool_call × 3 → restart_service 挂起
+  → token×N 正文（OOM 排查照常回答，开头写明"该操作尚未执行"）
+  → done {status:"awaiting_confirmation", pending:[...], route:"hybrid"}
+```
+
+判定分界线是**分句**：`重启 X 的步骤是什么`（同句问流程）→ 只读；
+`重启 X，并查 OOM 怎么办`（知识在另一分句）→ 照写，但要确认。
+这一轮**不写答案缓存**——缓存的是"某个动作正在等人确认"这个瞬时状态。
+
+为什么不把 SSE 连接挂住等人点（10 分钟）：中间任何代理都会掐断（nginx 默认 60s），
+进程重启就全丢，多副本还对不上。代价是一次交互两次请求，换来的是它在**多副本 / 重启 / 断连**
+下都不丢。图里为此多了一个汇合点 `tools_done` + 终局 `await_confirm`：
+
+```
+dispatch ─┬─▶ tools  ─┐
+          └─▶ recall ─┴─▶ tools_done ─┬─(无挂起)──────────▶ generate → END
+                                       ├─(挂起 + 需要检索)──▶ generate → END
+                                       └─(挂起 + 纯写)──────▶ await_confirm → END
+```
+
+汇合点必须前移到 `tools_done`：条件边挂在 `tools` 上的话，`recall→generate` 那条边仍会触发
+`generate` —— 于是"等人确认"的同时模型已经生成了一段"已为你重启"的答案。这个 bug 只在
+**真的有人确认**的场景里出现，平时跑测试永远看不见。
+
+### 演示与验收命令
+
+最省事的是这个交互脚本 —— 它把「拦截 → 审批单 → y/n → 回执 → 审计」串成一条流程，
+不用手工复制 token：
+
+```bash
+py -3.12 -m scripts.sandbox_demo            # 交互：一行一个问题，挂起后当场 y/n/r
+py -3.12 -m scripts.sandbox_demo --auto     # 无人值守跑完四幕（策略拒绝/批准/拒绝/重放 404）
+```
+
+想看原始帧、一步步手工做：
+
+```bash
+# 1) 挂起（注意看 confirm_required 和 done.status）
+py -3.12 -m scripts.stream_chat "帮我重启 order-service" --no-cache --show-frames
+
+# 2) 确认执行（token 来自上一步）
+curl -s --noproxy '*' -X POST http://localhost:8080/chat/confirm \
+  -H "X-API-Key: $OPS_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"token":"<上一步的 token>","approve":true}'
+# → status=executed, simulated=true, text 里写着「[模拟执行 · 未真正调用编排接口]」
+
+# 3) 重放同一个 token → 404（凭据一次性）
+# 4) 越权参数：直接调工具带 service=payment-gateway → 被策略拒绝，连 token 都不发
+# 5) 审计：curl -s --noproxy '*' "http://localhost:8080/admin/sandbox/audit?limit=5" -H "X-API-Key: $OPS_API_KEY"
+```
+
+**这两个写工具是 `simulated=True`**：它们不会真的动线上，返回文本里明确写
+`[模拟执行 · 未真正调用编排接口]`，事件里带 `simulated: true`。演示时把它讲成
+"真重启了"，面试官只要问一句"重启调的是哪个 API"就穿帮 —— 这条和 mock 数据不能
+当实时数据讲是同一条红线。
+
+### 口径（三条容易报错的）
+
+1. **挂起不计入降级**。`ok=False` 在这套代码里统一表示"没查到"，会被渲染成"暂时不可用"
+   并计入 `degraded_responses_total`。而 pending 既不是失败也不是降级，它是正常流程里的
+   一次暂停 —— 混进去会让工具失败率凭空上涨，排障时把"有人在审批"误读成"工具在坏"。
+2. **`denied` 与 `rejected` 必须分开**。面板上都表现为"没执行"，但处置完全相反：
+   `denied` = 参数越界/动作被禁（有人在探边界，要查是谁在调）；`rejected` = 人主动点了不执行
+   （正常流程）。
+3. **沙箱关闭 ≠ 放行**。`SANDBOX_ENABLED=false` 时写操作**一律拒绝**（fail-closed）。
+   反过来（fail-open）会让"Redis 挂了"变成"绕过审批的后门"，而 Redis 挂恰恰是最常见的故障。
+   只读工具完全不受影响，所以这个选择不伤可用性。
+
+顺带一个可观测性问题：沙箱最典型的失效方式是**静默的** —— 写了确认逻辑，但写工具的
+`risk` 标成了 `read`，于是每次重启都直接执行、一次确认都没弹过。这条只能靠面板发现：
+**有写工具却没有 `pending` 计数，说明闸门没接上**。所以 `sandbox_decisions_total` 上了大盘。
+
+### 面试追问速答
+
+- **"为什么不用 LangGraph 的 `interrupt()`？"** 它依赖 checkpointer（本项目还是 backlog），
+  且是进程内暂停 —— 多副本下恢复必须回到同一个进程。落库 + 新请求续跑实现的是同一个语义，
+  但不依赖 checkpointer，天然多副本可用。换成 `interrupt()` 是"更好的工程"，不是"更好的语义"。
+- **"token 存 Redis，Redis 被攻破怎么办？"** 那它就能改待办记录 —— 所以确认执行前**再校验一次**
+  参数策略（`_sandbox_gate` 里那个 `validate_call`），并且策略表在代码里、不在 Redis 里。
+  真正的兜底是写工具本身仍需要下游权限（本项目是模拟执行，所以只到这一层）。
+- **"并发两个确认同时到会怎样？"** 只有一个 `GETDEL` 成功，另一个拿到 None → 404。
+  非原子（GET 再 DEL）会双放行，这条有单测钉住（`test_token_single_use`）。
+
+---
+
 ## 7. 48 小时计划
 
 | 阶段 | 任务 | 里程碑 |
@@ -1059,7 +1711,7 @@ python -m scripts.fault_inject --fault stop-qdrant --rounds 5
 | ~~D1 上午（后一半）~~ ✅ 已完成 | 向量召回打通（Qdrant 接入 + 本地暴力扫描对照 + 一致性校验）· 意图路由 · SSE 串通 | **链路跑通** |
 | D1 下午（进行中） | ~~双路召回 + RRF 融合~~ ✅ · ~~Rerank~~ ✅ · ~~三层记忆~~ ✅ · ~~LangGraph 编排~~ ✅ | 核心闭环（压测数字待 D2） |
 | D1 晚 | Langfuse 接入 · 分段耗时埋点 · 缓存命中率接入 Grafana | 可追踪 |
-| D2 上午 | Java MCP Server · Skill 注册表 · 熔断/重试/降级链 | 故障可降级 |
+| D2 上午 | ~~Java MCP Server · Skill 注册表 · 熔断/重试/降级链~~ ✅ 已完成（见 §6.y） | 故障可降级 |
 | D2 下午 | RAGAS 评估 · Locust 压测 · 5 轮故障注入 · Grafana 大盘 | 五大指标 |
 | D2 晚 | compose 一键起 · README · 3 分钟演示录屏 · 简历段落 | 可交付 |
 
@@ -1136,7 +1788,7 @@ Copy-Item .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY
 
 # 3. 拉镜像（提前拉，别等到 D1 现场等）
-docker pull nginx:1.27-alpine
+docker pull nginx:latest                 # 本机已有同一个可跳过；alpine 变体弱网下经常拉不动
 docker pull redis/redis-stack-server:latest
 docker pull qdrant/qdrant:latest
 docker pull mysql:8.4
@@ -1154,6 +1806,13 @@ python -m tests.test_cache_manager
 - **方案 B（私有化叙事更完整）**：clone 官方仓库起自托管，然后把 `LANGFUSE_HOST` 指向它
 
 建议先用 A 跑通，D2 晚有时间再换 B —— 不要在第 0 天晚上陷在 ClickHouse 的容器编排里。
+
+> **现状**：代码已接好（见 §6.x「全链路可观测」），**填上 key 就能上报**，
+> 不必再改代码。填完先跑 `python -m scripts.trace_doctor --send-test` 验证，
+> 再重启服务 —— 顺序很重要：先自检能避免"改了配置重启两次还没数据"。
+>
+> 没配 key 也不影响任何功能：本地 `data/traces/*.jsonl` 是**全量**的，
+> `python -m scripts.trace_replay --session <id>` 照样能回放。
 
 ### 8.5 入库链路（D1 上午，✅ 已完成）
 
@@ -1387,6 +2046,9 @@ python -m scripts.ingest --stage index --reuse-vectors
 
 ## 9. 简历段落
 
+> **D2 之后以 `docs/DELIVERY_D2.md` 第二节为准**（含答案侧评估、缓存压测、故障演练的实测数字）。
+> 本节保留的是更早的检索/路由/编排证据链，两处数字口径不同，不要混用。
+
 > ⚠️ **本节的规矩：没有实测数字就留空，不许填估计值。**
 > "3 副本吞吐提升 4 倍"这种句子，面试官只要追问一句
 > *"怎么测的、基线是几个副本、压的是什么接口"* 就会露底。
@@ -1462,8 +2124,15 @@ python -m scripts.ingest --stage index --reuse-vectors
 
 ## 11. 待补的工程化项（加分但非必需）
 
-- [x] ~~`pytest` 全量接入~~ —— 已完成：**128 个测试函数 + 377 条 `check()` 断言**，
+- [x] ~~`pytest` 全量接入~~ —— 已完成：**144 个测试函数 + 434 条 `check()` 断言**，
   `check()` 已纳入 pytest 退出码（见 §4 的测试盲区说明）
+- [x] ~~全链路可观测~~ —— 已完成（**本地 + 云端均验证**）：10 阶段 span + TTFT 三处同源 +
+  `trace_replay` 会话回放 + `trace_doctor` 自检 + `bench_trace` 开销基准（见 §6.x）；
+  2026-10-18 真 key 下 v2 API 核对到 12 条 observation，10 阶段 span 全上云
+- [ ] **trace 按轮批量 flush**：现在每 span 同步 flush（P50 1.4ms，但 Windows 上 P95
+      会到 10ms）；改成 1~10ms 时间窗聚合能把长尾换掉，代价是进程被 `kill -9` 时丢最后一批
+- [x] ~~Langfuse 真 key 验证~~ —— 已完成（2026-10-18）：`--send-test` + v2 API 核对；
+  剩余小尾巴：在 UI 里亲眼看到 trace 并留一张截图（验证脚本没有浏览器，这步只能人做）
 - [ ] `ruff` + `mypy` 静态检查接入 CI
 - [ ] LangGraph **checkpointer 接 Redis**（断点续跑 / interrupt 人工确认 / 时间旅行；
       官方 `langgraph-checkpoint-redis` 需联网安装）

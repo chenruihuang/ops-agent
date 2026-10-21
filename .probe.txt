@@ -1,0 +1,6 @@
+﻿TextIOWrapper
+utf-8
+FileIO
+False
+PYTHONUTF8=1
+ENC=utf-8

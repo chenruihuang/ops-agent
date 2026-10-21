@@ -41,16 +41,19 @@ FAULTS = {
     "stop-redis": {
         "container": "redis",
         "desc": "缓存层不可用 —— 验证缓存挂掉不能拖垮主链路",
-        "alert": "ApiInstanceDown",
+        # 告警必须是**真会 firing** 的那条：Redis 没有被 Prometheus 抓取，
+        # 原来配的 ApiInstanceDown 看的是 ops-api 副本，停 redis 永远不会触发，
+        # 于是 T2 一直回填成 T1 → MTTR 恒等于端到端时间（一个假数）。
+        "alert": "CacheDegraded",
     },
     "stop-qdrant": {
         "container": "qdrant",
-        "desc": "向量库不可用 —— 验证召回层降级为无资料应答",
-        "alert": "HighErrorRate",
+        "desc": "向量库不可用 —— 验证召回层降级为关键词/无资料应答",
+        "alert": "RecallChannelDegraded",
     },
     "stop-mysql": {
         "container": "mysql",
-        "desc": "外部系统（MCP 工具）不可用 —— 验证工具调用降级",
+        "desc": "外部系统（MCP 工具的数据源）不可用 —— 验证工具调用降级",
         "alert": "CircuitBreakerOpen",
     },
 }
@@ -123,7 +126,10 @@ def probe_api(api: str, api_key: str, question: str, timeout: float = 30.0) -> d
       收到过任意 token 事件 = 服务对外可用（哪怕是降级答案）
       抛异常 / 5xx        = 不可用
     """
-    payload = json.dumps({"message": question}).encode()
+    # use_cache=false 是必须的：带缓存的探测会在 0.3s 内命中旧答案，
+    # 召回/工具根本没被碰到 —— 故障注入看起来"完全没影响"，实际只是被缓存遮住了。
+    # 实测：stop-qdrant 时带缓存探测 100% 成功、0.3s；关掉缓存才看到真实路径。
+    payload = json.dumps({"message": question, "use_cache": False}).encode()
     req = urllib.request.Request(
         f"{api}/chat/stream",
         data=payload,

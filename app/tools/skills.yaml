@@ -1,0 +1,46 @@
+# Skill 声明 —— 「一个业务意图怎么被满足」。
+#
+# 与 tools 的关系：tool 是一次 IO，skill 是工具的组合 + 横向降级路径。
+# 纵向降级（mcp → cache → mock）不在这里，它由 ToolRegistry 内部完成。
+#
+# 字段：
+#   requires    需要路由阶段抽出哪些实体，全满足才匹配（不是"或"）
+#   steps[].when  always | previous_empty（上一步没查到）| previous_failed（上一步失败）
+#   steps[].args  {ticket_no} / {service} / {asset_code} / {keyword} 为实体占位符；
+#                 任一占位符填不满 → 跳过该步（不会构造空参数去查）
+#   budget_ms    整条 skill 的总时长上限，超了就带已有结果返回
+
+version: 1
+
+skills:
+  - name: ticket_diagnosis
+    description: 定位一张工单的进展：先按单号精确查，查不到就按关键词捞同类工单
+    requires: [ticket_no]
+    budget_ms: 2500
+    tags: [ticket]
+    steps:
+      - tool: query_ticket_by_no
+        label: 按单号查
+        args: { ticket_no: "{ticket_no}" }
+      # 单号查不到时，如果问题里还带了服务名，就按服务捞一批 —— 这是横向降级
+      - tool: query_ticket_by_service
+        when: previous_empty
+        label: 同服务工单
+        args: { service: "{service}" }
+      - tool: query_ticket_by_keyword
+        when: previous_empty
+        label: 关键词兜底
+        args: { keyword: "{keyword}" }
+
+  - name: service_health
+    description: 看一个服务现在健不健康：当前未关闭告警 + 相关工单
+    requires: [service]
+    budget_ms: 2000
+    tags: [health, alert]
+    steps:
+      - tool: query_alerts_by_service
+        label: 当前告警
+        args: { service: "{service}" }
+      - tool: query_ticket_by_service
+        label: 相关工单
+        args: { service: "{service}" }

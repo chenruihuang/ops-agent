@@ -12,7 +12,8 @@ name: ops-agent
 services:
   # ==================== 入口层 ====================
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx@sha256:abe47724e466aeab9a345d8e46a221c2fa8953c7848bb4a3bd9976a7199f8cf2
+    pull_policy: missing     # 本地有就直接用，没有才拉 —— 显式写出来，免得被误读成"每次都拉"
     container_name: ops-nginx
     ports:
       - "8080:80"          # 宿主 8080 —— 避免与 cs-agent 的 8000 冲突
@@ -36,22 +37,30 @@ services:
       - HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=1
       - TRANSFORMERS_OFFLINE=1
-      # 容器内必须用 compose 服务名：.env 里的 localhost 是给**宿主机脚本**用的，
-      # 在容器里 localhost 指向容器自己，会直接连不上 redis / qdrant。
-      # 这里显式覆盖，让"同一份 .env 两种运行位置都对"。
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      # trace 落到可写挂载点（/app/data 是只读的，写进去会静默失败）
+      - OBSERVABILITY_TRACE_DIR=/app/traces
     expose:
       - "8000"
     volumes:
       - huggingface_cache:/root/.cache/huggingface
       - ./data:/app/data:ro
+      - ./eval:/app/eval:ro
+      # 只需要这一层可写：本地 JSONL 明细（会话回放的唯一事实源）
+      - ./data/traces:/app/traces
+      # 审计日志同理必须是可写挂载 —— 它在 ./data 下，而 ./data 整体是 :ro。
+      # 第一次跑就踩到了：审计一条没落下来，而 /admin/sandbox/audit 只是返回空列表，
+      # 看起来像"没人执行过写操作"（Docker 会按路径长度取更具体的挂载，不会冲突）。
+      - ./data/audit:/app/data/audit
     depends_on:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_healthy
+      java-mcp:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
@@ -63,18 +72,41 @@ services:
       replicas: 2            # docker compose v2 会遵守；也可用 --scale api=3 覆盖
     restart: unless-stopped
 
+  # ==================== 工具服务（Java MCP）====================
+  # JSON-RPC 2.0 over HTTP，5 个工具与 Python 侧 TOOL_SPECS 一一对应。
+  # 故障注入靠请求头 X-Chaos（见 java-mcp/ChaosFilter.java），默认不生效。
+  java-mcp:
+    build:
+      context: ./java-mcp
+      dockerfile: Dockerfile
+    environment:
+      - TZ=Asia/Shanghai
+    expose:
+      - "8080"
+    ports:
+      # 宿主 18081 → 容器 8080，仅供本机用 Postman / curl 直连调试。
+      # 刻意不复用 8080：宿主 8080 已被 nginx 占用（统一入口），
+      # 打错端口时 nginx 会把 /mcp 转给 FastAPI，返回 {"detail":"Not Found"}，
+      # 看起来像 MCP 服务坏了 —— 用一个不相邻的端口把这两件事彻底分开。
+      # 不用 18080 是因为它已被遗留的手工容器 mcp-test 占着（同镜像、非 compose 管理）。
+      - "18081:8080"
+    healthcheck:
+      # JRE 镜像没有 curl，用 Java 自己发一个 HTTP 探活？
+      # 不 —— 那是把健康检查写成一个小程序。wget 也没有。
+      # 用 bash 的 /dev/tcp 探测（temurin 镜像基于 ubuntu，有 bash）：
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q 200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s      # JVM 冷启动 + Spring 上下文
+    restart: unless-stopped
+
   # ==================== 缓存层 ====================
   # redis-stack 含 RediSearch，语义缓存直接用 KNN 向量检索，省一个组件
   redis:
     image: redis/redis-stack-server:latest
     container_name: ops-redis
     ports:
-      # 宿主端口用 16379，**刻意避开 6379**：
-      # 本机 D:\Program Files\Redis 装过 Redis 3.0.504（Windows 服务，占着 0.0.0.0:6379），
-      # 两个进程同时监听时 localhost:6379 会命中那个老实例 —— 它不支持 HELLO（Redis 6+ 才有），
-      # 也没有 RediSearch，症状是入库脚本报 unknown command 'HELLO'、
-      # 且语义缓存整层静默失效。换端口是最省事的隔离方式，不必动本机那个服务。
-      # 容器之间仍走 6379（服务名 redis:6379），不受此映射影响。
       - "6379:6379"
     environment:
       # allkeys-lru：内存满时按 LRU 淘汰，缓存场景正解
@@ -133,6 +165,10 @@ services:
     image: prom/prometheus:v2.54.1
     container_name: ops-prometheus
     ports:
+      # 宿主 9091 而非 9090 —— cs-agent 的 prometheus 已长期占用 9090，
+      # 两个项目同机共存时容器会以 "port is already allocated" 启动失败，
+      # 而 compose 会因此**中止整个 up**，把 nginx / grafana 一并留在 created 状态。
+      # 容器间访问不受影响：grafana 数据源走 http://prometheus:9090（容器内端口）。
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro

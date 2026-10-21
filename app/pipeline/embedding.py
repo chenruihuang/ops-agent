@@ -44,7 +44,13 @@ def get_reranker():
 def warmup() -> None:
     """容器启动时预热，避免第一个真实请求承担模型加载时间（否则 TTFT 基线是假的）。"""
     get_embedder().encode(["预热"], normalize_embeddings=True)
-    get_reranker().predict([("预热", "预热")])
+    # 重排关掉时**不要**加载 reranker：实测这一步在本机要 ~40s 且占几百 MB，
+    # 而它注定不会被调用。表现为容器 startup 期间 /health 一直不通，
+    # 外面看到的是 502（nginx）而不是"还在预热"—— 很容易被误判成部署挂了。
+    if getattr(settings, "rerank_enabled", True):
+        get_reranker().predict([("预热", "预热")])
+    else:
+        log.info("跳过 rerank 预热：RERANK_ENABLED=false（省一次模型加载）")
 
 
 def _embed_sync(texts: Sequence[str]) -> list[list[float]]:

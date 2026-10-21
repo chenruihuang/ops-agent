@@ -47,8 +47,13 @@ TICKET_NO = re.compile(r"\bINC-\d{4}-\d{3,4}\b", re.IGNORECASE)
 # 资产编码：SRV-0088
 ASSET_CODE = re.compile(r"\bSRV-\d{4}\b", re.IGNORECASE)
 # 服务名：inventory-service / payment-gateway / risk-engine
+# 服务名。前后**不能用 `\b`**：Python 3 的 `\w` 把汉字算作单词字符，
+# 于是"重启order-service"（中文与英文之间没有空格）里 `重启o` 之间
+# 不存在 word boundary，整条规则静默失配 —— 用户最自然的打字方式反而抽不出服务名。
+# 改用"前后不是 [a-z0-9-]"的否定环视：中文、标点、空格、句首句尾都能匹配，
+# 但 `xorder-service`、`order-service-v2` 这类粘连仍然会被挡住。
 SERVICE_NAME = re.compile(
-    r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:service|gateway|center|engine|job|cluster)\b",
+    r"(?<![a-z0-9-])[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:service|gateway|center|engine|job|cluster)(?![a-z0-9-])",
     re.IGNORECASE,
 )
 # 错误码：ORD-429-001（用于判断"这题在问知识还是在查实时状态"）
@@ -99,6 +104,46 @@ REALTIME_OBJECT = re.compile(
     re.IGNORECASE,
 )
 
+# 写操作动词：会改变线上状态的祈使动作。
+#
+# 为什么单独一组、而不是并进 LIVE_VERBS：
+#   「重启 order-service」是**要执行**，「order-service 现在什么状态」是**要查询**。
+#   两者都走工具链路，但只有前者会触发沙箱闸门 —— 如果把两者混成一个信号，
+#   就没法在路由阶段回答"这题要不要审批"。
+#
+# 为什么必须带服务名才算（`entities.services`）：
+#   「Pod 反复重启应该按哪个文档处理」里的"重启"是在描述现象，
+#   没有可执行对象。这条约束把它挡在知识题里 —— 这是刻意的不对称：
+#   漏判一个写操作 → 用户没得到执行（可恢复）；
+#   误判一个知识题成写操作 → 用户被要求批准一次他根本没想做的变更（体验事故）。
+WRITE_ACTION = re.compile(
+    r"(?:重启|重新启动|滚动重启|再启动|"
+    r"扩容|缩容|扩到|缩到|调整副本|改副本数|副本数改成|副本数调到|副本数设为)"
+)
+
+# 从"扩到 5 个副本""副本数调到 6"里取目标副本数。
+#
+# 取不到就不规划（见 planner._write_calls）—— 不猜数字：
+# 默认值填错比不执行危险得多。取到了也**不在这里判越界**：
+# 越界交给沙箱策略拒绝，用户能看到"副本数（1~10）不合法"这句明确的话，
+# 比"什么都没发生"更容易理解。
+REPLICAS = re.compile(
+    r"(?:扩容到|缩容到|扩到|缩到|调整为|调成|改成|设成|副本数(?:改成|调到|设为|为)?)\s*(\d{1,3})"
+    r"|(\d{1,3})\s*个副本"
+)
+
+
+def replicas_of(query: str) -> int | None:
+    """抽目标副本数；抽不到返回 None（调用方据此决定"不规划"）。"""
+    m = REPLICAS.search(query or "")
+    if m is None:
+        return None
+    try:
+        return int(m.group(1) or m.group(2))
+    except (TypeError, ValueError):
+        return None
+
+
 # 知识诉求（强信号）：问定义 / 规则 / 原因 / 步骤 / 数值。
 #
 # 「哪些」「是什么」「什么样的」**刻意不在这里** —— 它们既能问知识也能问实时
@@ -131,6 +176,24 @@ CHITCHAT_PHRASE = re.compile(
 CHITCHAT_SPLIT = re.compile(r"[，,。.！!？?；;、：:\s~～]+")
 CHITCHAT_MAX_CHARS = 60
 CHITCHAT_MAX_PARTS = 5
+
+
+# 分句切分：只切"句子边界"，不切空格。
+# 用于回答"这个知识信号是在问写动作本身，还是在问另一件事"。
+CLAUSE_SPLIT = re.compile(r"[，,。.！!？?；;、\n]+")
+
+
+def _write_clause(text: str) -> str:
+    """返回含写操作动词的那个分句；没有写动词时返回空串。
+
+    只取**第一个**命中分句：一句话里出现两个写动作时，逐句判知识归属会
+    变成"哪句算主句"的玄学，而沙箱会在执行前逐条校验参数，
+    多挂起一个动作的代价远小于漏挂一个。
+    """
+    for part in CLAUSE_SPLIT.split(text):
+        if WRITE_ACTION.search(part):
+            return part
+    return ""
 
 
 def _is_pure_chitchat(text: str) -> bool:
@@ -202,6 +265,11 @@ class RouteDecision:
     entities: Entities = field(default_factory=Entities)
     needs_rag: bool = True
     needs_tool: bool = False
+    # 这题要不要**改线上状态**。它不改变走哪条链路（写操作也是工具链路），
+    # 只决定 planner 要不要规划写工具 —— 而写工具一定会被沙箱拦下来等确认。
+    # 单独一个字段而不是让 planner 自己再解析一遍消息：路由已经是唯一的
+    # "这句话想干什么"的判定点，判定分散两处必然漂。
+    needs_write: bool = False
 
     def as_event(self) -> dict[str, Any]:
         """给 SSE 用的事件负载。
@@ -219,6 +287,7 @@ class RouteDecision:
             "entities": self.entities.as_dict(),
             "needs_rag": self.needs_rag,
             "needs_tool": self.needs_tool,
+            "needs_write": self.needs_write,
         }
 
 
@@ -278,6 +347,33 @@ def decide(query: str) -> RouteDecision:
     # 错误码是知识题的强特征（"ORD-429-001 是什么含义"），且不构成实时信号
     if entities.error_codes:
         signals.append(f"error_code:{entities.error_codes[0]}")
+
+    # ---- 3.5 写操作信号 ----
+    # 必须"动词 + 服务名"同时成立，理由见 WRITE_ACTION 的注释。
+    #
+    # 知识信号只按**分句**算否决，不按整句：
+    #   「重启 order-service 的步骤是什么」   → 同分句问知识，是在问流程，不写
+    #   「重启 order-service，并查 OOM 怎么办」→ 知识落在另一个分句，是并列诉求，照样写
+    # 早期版本用整句 knowledge 一票否决，后果是复句里的写操作被**静默吞掉**：
+    # 不挂起、不拒绝、答案里还照常写"重启命令参考"，用户以为在走流程。
+    # 这类漏判比误判危险得多 —— 误判只是多一次审批，漏判是"该拦的没拦"。
+    write_hit = bool(WRITE_ACTION.search(text)) and bool(entities.services)
+    write_clause = _write_clause(text)
+    asking_how = bool(write_clause) and bool(KNOWLEDGE.search(write_clause))
+
+    if write_hit and not asking_how:
+        signals.append(f"write_action:{entities.services[0]}")
+        if not knowledge:
+            return RouteDecision(
+                "tool", 0.82, "命中写操作动作与服务名，需人工确认后才能执行",
+                signals, entities, False, True, True,
+            )
+        # 复合诉求：既要执行写操作，又问了知识。
+        # 不能因为"句子里还有个知识问题"就把写操作降级成只读。
+        return RouteDecision(
+            "hybrid", 0.86, "既问知识又要执行写操作，写操作需人工确认",
+            signals + ["knowledge"], entities, True, True, True,
+        )
 
     if not live:
         confidence = 0.75 if knowledge else 0.6

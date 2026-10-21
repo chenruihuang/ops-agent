@@ -131,17 +131,78 @@ class Settings(BaseSettings):
     # ---------- 外部系统 ----------
     mcp_server_url: str = "http://java-mcp:8080"
     mcp_enabled: bool = True
+
+    # ---------- 韧性（熔断 / 重试 / 降级）----------
+    # 顺序是 breaker(外) → retry(内)：只有"重试用尽仍失败"才计一次熔断失败。
+    # 反过来会让 3 次重试打满阈值 —— 抖一下就熔断。
+    #
+    # 重试次数：MCP 是内网 HTTP，1 次重试能吃掉绝大多数瞬时抖动；
+    # 3 次是"抖动 + 一次 GC 停顿"的上限。再多只是在放大尾延迟。
+    mcp_retry_max_attempts: int = 3
+    mcp_retry_base_delay: float = 0.1      # 退避起点 100ms → 200ms → 400ms（带 20% 抖动）
+    mcp_retry_max_delay: float = 1.0
+    mcp_retry_jitter: float = 0.2
+    # MCP 单次请求超时。**必须满足 timeout × 重试次数 + 退避 < tool_timeout_seconds**，
+    # 否则 ToolRegistry 会在重试走完前切断整个调用（表现为"日志在重试、实际已超时"）。
+    # 0.8 × 3 + ~0.3 ≈ 2.7s < 3s。设 0 表示按公式自动倒算。
+    mcp_timeout_seconds: float = 0.8
+    # 熔断阈值：连续 5 次"最终失败"才开。取 5 而不是 3 ——
+    # 并发 2 个请求各重试 3 次时，3 容易被一次故障放大成误熔断。
+    mcp_cb_fail_threshold: int = 5
+    # 冷却 15s：够下游重启一次；太短会在恢复期反复开合（flapping）。
+    mcp_cb_cool_down: float = 15.0
+    # 半开只放 1 个探测：恢复瞬间积压的请求全放行会把刚起来的下游再打垮。
+    mcp_cb_half_open_max: int = 1
+    # 故障注入：非空时作为 X-Chaos 头发给 Java MCP（见 java-mcp/ChaosFilter）。
+    # 只在演示/自测时用，生产留空。**默认空**是安全边界，不是省略。
+    mcp_chaos: str = ""
+    # skill 声明文件（YAML）。不存在/解析失败时退回代码内置定义。
+    skills_path: str = "app/tools/skills.yaml"
+
+    # ---------- 安全沙箱（写操作人工确认）----------
+    # 总开关。关掉之后写工具**不是变成直接执行**，而是全部被拒绝（fail-closed）——
+    # 开关的语义是"更严"而不是"放行"，否则线上一次误操作就能把闸门关掉。
+    sandbox_enabled: bool = True
+    # 待确认动作的存活时间。10 分钟：够一个人看到消息、切回来点确认；
+    # 太长（比如 1 天）会让"三天前那条确认"在系统里继续有效 —— 上下文早变了。
+    sandbox_pending_ttl: int = 600
+    # 审计日志。只记写/危险动作与被拒绝的调用，只读工具不记（traces 里已有）。
+    sandbox_audit_path: str = "data/audit/sandbox.jsonl"
+
     mysql_host: str = "mysql"
     mysql_port: int = 3306
     mysql_user: str = "root"
     mysql_password: SecretStr = SecretStr("root123")
     mysql_database: str = "ops_ticket"
 
-    # ---------- 可观测 ----------
+    # ---------- 可观测（追踪）----------
+    # 三个开关的分工必须分清，否则会得出错误结论：
+    #   observability_enabled  —— 埋点总闸（关掉 = 不建 span、不落盘）
+    #   observability_trace_dir —— 本地 JSONL 明细目录（**全量**，不采样）
+    #   langfuse_enabled        —— 是否上报云端（还需 public/secret key）
+    # 本地全量 + 云端采样的方向是刻意的：本地是"回放某次失败请求"的事实源，
+    # 一旦本地也采样，回放就变成碰运气。
+    observability_enabled: bool = True
+    observability_trace_dir: str = "data/traces"
+    observability_sample_rate: float = 1.0   # 只作用于 Langfuse 上报
+    observability_tags: str = "ops-agent"    # 逗号分隔；Langfuse 里做筛选维度
+    app_release: str = ""
+    app_environment: str = "default"
+
     langfuse_enabled: bool = True
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
+    # 连不上时的单次请求超时。取 5s 是"够慢网络握手"与"别把关机拖成 1 分钟"的折中；
+    # SDK 内部有重试，实测连不上时 flush() 约 0.9s 返回。
+    langfuse_timeout: float = 5.0
+    # 构造客户端的等待上限。实测同一份代码在 Windows 宿主上构造耗时
+    # 10~51s 不等（SDK 5.0.1 + 网络质量），容器内 5.0.2 是 0.6s。
+    # 超过这个值就放弃上报，本地 JSONL 不受影响 —— 启动时间不该被一个
+    # 可选依赖拖成"服务起不来"的样子。
+    langfuse_init_timeout: float = 10.0
+    langfuse_flush_at: int = 64
+    langfuse_flush_interval: float = 2.0
 
     # ---------- 应用 ----------
     log_level: str = "INFO"

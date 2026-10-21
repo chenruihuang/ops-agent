@@ -1,0 +1,43 @@
+server:
+  port: 8080
+  # Tomcat 线程池不用大：这是内网工具服务，客户端并发 = 单次问答的工具数（≤4）。
+  # 线程太少会让"注入 sleep"时的并发表现失真，太多则白占内存。
+  tomcat:
+    threads:
+      max: 40
+      min-spare: 4
+
+spring:
+  application:
+    name: java-mcp
+  mvc:
+    throw-exception-if-no-handler-found: false
+
+# Actuator：只暴露需要的那几个。
+# `/actuator/prometheus` 是 Prometheus 的抓取地址（见 monitoring/prometheus.yml），
+# `/actuator/health` 给 compose healthcheck 用（比自写的 /health 更标准，
+# 但 /health 保留 —— 现有探活与脚本都指着它，改路径属于无收益的破坏性变更）。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: java-mcp
+    distribution:
+      # 工具调用耗时的分位桶：内网查询应在毫秒级，
+      # 上限给到 5s 是为了让"注入 sleep/hang 的实验"也能落进直方图。
+      percentiles-histogram:
+        mcp_tool_seconds: true
+
+# 日志：一行一条、带方法名与耗时，方便在 compose logs 里直接 grep。
+logging:
+  level:
+    root: INFO
+    com.opsagent.mcp: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%logger{0}] %msg%n"

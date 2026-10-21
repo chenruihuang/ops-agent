@@ -59,13 +59,29 @@ class FakeRedis:
         *,
         nx: bool = False,
         px: int | None = None,
+        ex: int | None = None,
     ) -> bool | None:
+        # `ex`（秒）是安全沙箱用的：待确认动作的 TTL 是 600s，
+        # 用 px 表示要写 600000，可读性差且容易少写一个 0。
         if nx and self._alive(key) and key in self._kv:
             return None
         self._kv[key] = (value, None)
         if px:
             self._expiry[key] = time.monotonic() + px / 1000.0
+        elif ex:
+            self._expiry[key] = time.monotonic() + ex
         return True
+
+    async def getdel(self, key: str) -> str | None:
+        """原子取出并删除 —— 确认凭据的一次性语义全靠它。
+
+        FakeRedis 是单线程事件循环，天然原子；真实 Redis 的 GETDEL 也是原子的。
+        两者语义一致，所以这里不需要额外加锁（加了反而会掩盖真实现的差异）。
+        """
+        value = await self.get(key)
+        self._kv.pop(key, None)
+        self._expiry.pop(key, None)
+        return value
 
     async def delete(self, *keys: str) -> int:
         n = 0

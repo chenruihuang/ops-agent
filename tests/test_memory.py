@@ -31,7 +31,7 @@ from app.memory.facts import extract_facts                      # noqa: E402
 from app.memory.session import (                                # noqa: E402
     InMemorySessionStore,
     RedisSessionStore,
-    _safe_sid,
+    safe_sid,
     render_memory_context,
 )
 from app.pipeline import rag                                    # noqa: E402
@@ -69,6 +69,9 @@ class FakeCache:
         from app.cache.manager import CachedAnswer
 
         return CachedAnswer(answer="", queried=query, source="miss")
+
+    async def get_semantic(self, query, embedding):
+        return None
 
     async def acquire_singleflight(self, query) -> bool:
         return True
@@ -161,12 +164,12 @@ def test_facts_extraction() -> None:
     check("None 安全", extract_facts(None) == [], "")
 
 
-def test_safe_sid() -> None:
+def testsafe_sid() -> None:
     print("session_id 白名单：键注入从源头堵死")
-    check("正常 id 通过", _safe_sid("user-001") == "user-001", "")
-    check("空 / None 按'无会话'处理", _safe_sid(None) == "" and _safe_sid("") == "", "")
+    check("正常 id 通过", safe_sid("user-001") == "user-001", "")
+    check("空 / None 按'无会话'处理", safe_sid(None) == "" and safe_sid("") == "", "")
     for bad in ["a: b", "键*注入", "x" * 65, "a\nb"]:
-        check(f"非法 id 被拒：{bad[:8]!r}", _safe_sid(bad) == "", _safe_sid(bad))
+        check(f"非法 id 被拒：{bad[:8]!r}", safe_sid(bad) == "", safe_sid(bad))
 
 
 # =====================================================================
@@ -379,7 +382,7 @@ def main() -> int:
     print("三层记忆测试")
     print("=" * 70)
     test_facts_extraction()
-    test_safe_sid()
+    testsafe_sid()
     test_inmemory_store()
     test_render_memory_context()
     test_redis_store_degradation()

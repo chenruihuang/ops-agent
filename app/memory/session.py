@@ -35,7 +35,7 @@ _SID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 _TURN_FIELD_LEN = 500
 
 
-def _safe_sid(session_id: str | None) -> str:
+def safe_sid(session_id: str | None) -> str:
     """非法 session_id 一律按"没有会话"处理，而不是抛错。"""
     if not session_id or not _SID_RE.match(session_id):
         return ""
@@ -65,7 +65,7 @@ class InMemorySessionStore:
         self.last_error: str | None = None
 
     async def load(self, session_id: str | None) -> dict[str, Any]:
-        sid = _safe_sid(session_id)
+        sid = safe_sid(session_id)
         if not sid:
             return {"history": [], "facts": []}
         self.last_error = None
@@ -84,7 +84,7 @@ class InMemorySessionStore:
         route: str,
         facts: list[str] | None = None,
     ) -> str | None:
-        sid = _safe_sid(session_id)
+        sid = safe_sid(session_id)
         if not sid:
             return None
         self.hist.setdefault(sid, []).append(
@@ -113,7 +113,7 @@ class RedisSessionStore:
         self.last_error: str | None = None
 
     async def load(self, session_id: str | None) -> dict[str, Any]:
-        sid = _safe_sid(session_id)
+        sid = safe_sid(session_id)
         if not sid:
             return {"history": [], "facts": []}
         try:
@@ -141,7 +141,7 @@ class RedisSessionStore:
         facts: list[str] | None = None,
     ) -> str | None:
         """写一轮对话（+ 可选新事实）。返回错误串（memory:<Err>）或 None。"""
-        sid = _safe_sid(session_id)
+        sid = safe_sid(session_id)
         if not sid:
             return None
         try:

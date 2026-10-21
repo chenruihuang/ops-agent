@@ -1,0 +1,1084 @@
+{
+  "uid": "ops-agent-main",
+  "title": "Ops Agent · 主链路大盘",
+  "tags": [
+    "ops-agent",
+    "rag",
+    "availability"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "editable": true,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "⓪ 盘空先看这里：窗口内到底有没有流量",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "近 5 分钟请求数",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(chat_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "请求数",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "description": "0 = 最近 5 分钟没有请求，下面所有 rate/分位数面板本来就该是空的。先发一条请求再判断「大盘坏了」。"
+    },
+    {
+      "id": 3,
+      "title": "近 1 小时请求数",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 1,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(chat_requests_total[1h]))",
+          "refId": "A",
+          "legendFormat": "请求数",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "description": "用来区分「刚空闲」和「一直没起来」：1 小时有数但 5 分钟没数 = 只是空闲。"
+    },
+    {
+      "id": 4,
+      "title": "请求活动时间线",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 1,
+        "w": 14,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(chat_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "近 5 分钟请求数"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "每条 = 该时刻最近 5 分钟的请求数。柱子出现在什么时候，就把时间窗拉到那一段，而不是怀疑面板。"
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "① 请求与延迟（TTFT / 分阶段）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "title": "请求成功率",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(chat_requests_total{result=\"ok\"}[5m])) / sum(rate(chat_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "成功率",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "无流量"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "description": "口径：LLM 调用成功数 / 全部调用数。这不是 SLA —— 真实可用性看故障注入实验（scripts/fault_inject.py）。分母为 0 时这里显示「无流量」而不是 0%：0/0 是 NaN，曾经用 clamp_min(…,1e-9) 兜底，结果空闲时面板写着「0% 成功率」——一个会让所有人误判 AI 挂了的数字。"
+    },
+    {
+      "id": 7,
+      "title": "吞吐（LLM 调用/秒）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 6,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (model) (rate(llm_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "按 model 分。压测时它和 Locust 的 RPS 对照，能看出排队发生在哪一侧。"
+    },
+    {
+      "id": 8,
+      "title": "TTFT p50 / p95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, cache) (rate(ttft_seconds_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 cache={{cache}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, cache) (rate(ttft_seconds_bucket[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 cache={{cache}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "只看首 token。缓存命中的请求会天然更快，所以按 cache 标签分开画 —— 混在一起会把缓存收益误读成模型变快。"
+    },
+    {
+      "id": 9,
+      "title": "分阶段 P95（定位劣化出在哪一段）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 6,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(stage_seconds_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "按阶段拆开。看「是哪一段变慢」比看总耗时有用得多 —— 总耗时劣化时，这里通常只有一段在涨。"
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "② 缓存（命中率与护栏）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "title": "缓存命中率（按层）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (layer) (rate(cache_requests_total{result=\"hit\"}[5m])) / sum by (layer) (rate(cache_requests_total{result=~\"hit|miss\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{layer}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "无缓存查询"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "hit / (hit+miss)。rejected 是护栏拒绝，不是 miss —— 把它算进 miss 会让阈值调优的效果看不出来。分母为 0 时显示「无流量（无缓存查询）」，不是 0% 命中率。"
+    },
+    {
+      "id": 12,
+      "title": "语义缓存候选相似度分布",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 12,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(cache_semantic_similarity_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.9, sum by (le) (rate(cache_semantic_similarity_bucket[5m])))",
+          "refId": "B",
+          "legendFormat": "p90"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "用来标定阈值：如果 p50 贴着阈值，说明阈值在误命中边缘。"
+    },
+    {
+      "id": 13,
+      "title": "护栏拒绝（按原因）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (reason) (rate(cache_guard_rejected_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "护栏拒绝 = 向量很像但实体对不上（工单号/错误码不同）。它涨说明阈值在诱捕，不是缓存变差了。"
+    },
+    {
+      "id": 14,
+      "title": "缓存省下的 token（近 1 小时）",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(cache_tokens_saved_total[1h]))",
+          "refId": "A",
+          "legendFormat": "tokens",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "成本指标。命中一次就省一次完整 prompt 的 token —— 报「缓存有用」时用它，而不是只报命中率。"
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "③ 高可用（熔断 / 重试 / 降级）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "title": "熔断器状态",
+      "type": "state-timeline",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "circuit_breaker_state",
+          "refId": "A",
+          "legendFormat": "{{dependency}}/{{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "0=closed 1=half_open 2=open。状态切换是事故强信号，WARNING 日志同步打点。"
+    },
+    {
+      "id": 17,
+      "title": "工具结果来源（mcp / cache / mock）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (source) (rate(tool_calls_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "mock 占比上来通常意味着 MCP 不健康 —— 而不是「工具就是慢」。"
+    },
+    {
+      "id": 18,
+      "title": "重试速率",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (dependency) (rate(tool_retries_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{dependency}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "重试是在「吃掉抖动」，但持续高位意味着依赖一直不健康 —— 配合熔断状态一起看才有意义。"
+    },
+    {
+      "id": 19,
+      "title": "降级跳数（为什么降级）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (stage, reason) (rate(tool_degraded_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{stage}}/{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "reason: circuit_open / unavailable / timeout / error:Type。排障方向完全不同，必须分开看。"
+    },
+    {
+      "id": 20,
+      "title": "降级应答（按阶段）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (stage, reason) (rate(degraded_responses_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{stage}}/{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "按 stage 分（recall / tools / memory / generate）。降级必须是「用户看得见、我们能追」的，不是静默降智。"
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "④ RAG 质量（评估产物）与 Java MCP",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 22,
+      "title": "上下文召回率 / 精度（评估产物）",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(rag_context_recall)",
+          "refId": "A",
+          "legendFormat": "recall@{{top_k}}",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(rag_context_precision)",
+          "refId": "B",
+          "legendFormat": "precision@{{top_k}}",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(rag_anchor_hit_rate)",
+          "refId": "C",
+          "legendFormat": "anchor@{{top_k}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "未跑过评估"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "description": "由 scripts/run_eval --publish 经 POST /admin/eval/metrics 写进 api 进程。为空 = 还没跑过**全量**评估（抽样结果刻意不写大盘，否则 8 题的 0.9 会盖掉48 题的 0.8785）。faithfulness 需要 ragas 判定，本项目不产出，所以这里不放它的格子 —— 少一块比放一个永远空的格子诚实。"
+    },
+    {
+      "id": 23,
+      "title": "Java MCP 工具 QPS",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 28,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (tool) (rate(mcp_tool_calls_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{tool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "按工具分。与 Python 侧 tool_calls_total{source=\"mcp\"} 应对得上 —— 对不上说明有调用没走 MCP（降级或缓存命中）。"
+    },
+    {
+      "id": 24,
+      "title": "Java MCP 工具 P95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 28,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, tool) (rate(mcp_tool_seconds_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "{{tool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Actuator + Micrometer 直方图。注入 sleep/hang 时这里会立刻抬头，是验证 chaos 生效最快的证据。"
+    },
+    {
+      "id": 25,
+      "title": "故障注入次数（X-Chaos）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (mode) (rate(mcp_chaos_total[10m]))",
+          "refId": "A",
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "做 5 轮故障实验时，用它核对「注入真的发生了」以及次数是否对得上。"
+    },
+    {
+      "id": 26,
+      "title": "抓取目标存活",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 33,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "up{job=~\"ops-api|java-mcp\"}",
+          "refId": "A",
+          "legendFormat": "{{job}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "抓不到目标"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "description": "up=0 意味着这个 job 的指标整块缺失。java-mcp 仍为 0 时先看 Actuator 是否暴露 /actuator/prometheus。"
+    },
+    {
+      "id": 27,
+      "title": "降级实验：成功率 vs 重试",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 33,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(llm_requests_total{result!=\"ok\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "失败/秒"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(tool_retries_total[5m]))",
+          "refId": "B",
+          "legendFormat": "重试/秒"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无流量（窗口内没有请求）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "做故障注入时看这两条：失败率抬头而重试同步抬头 = 在吃抖动；失败率抬头但重试没动 = 熔断已打开（快速失败，不再浪费重试）。"
+    },
+    {
+      "id": 28,
+      "type": "row",
+      "title": "⑤ 安全沙箱（写操作的人工确认）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 29,
+      "title": "沙箱决策（5 分钟）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (decision) (rate(sandbox_decisions_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{decision}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "窗口内没有写操作（只读工具不计数）"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "pending / approved / rejected / denied / invalid_grant。做一次「重启 order-service」应当看到 1 次 pending + 1 次 approved；只有 approved 没有 pending = 闸门被绕过（tool 的 risk 没标）。"
+    },
+    {
+      "id": 30,
+      "title": "待确认动作：从挂起到人点确认的时长 P95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 39,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sandbox_confirm_seconds_bucket[10m])))",
+          "refId": "A",
+          "legendFormat": "P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "窗口内没有确认动作"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "这个数衡量的是**人**，不是系统。几十分钟说明请求根本没人看 —— 这时优化确认接口的耗时没有任何意义。"
+    },
+    {
+      "id": 31,
+      "title": "被策略拒绝的调用（denied / invalid_grant）",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 39,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(sandbox_decisions_total{decision=\"denied\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "denied"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(sandbox_decisions_total{decision=\"invalid_grant\"}[$__range]))",
+          "refId": "B",
+          "legendFormat": "invalid_grant"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(sandbox_write_tools)",
+          "refId": "C",
+          "legendFormat": "在册写工具",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "窗口内没有拒绝"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "denied = 参数越界或动作被禁用（有人在探边界，要查是谁在调）；invalid_grant = 凭据过期/重放/挪用（正常流程也会有，多为超时）。两者都不代表系统故障，所以**不计入** degraded 指标。右侧「在册写工具」是对照值：它 > 0 而 pending 恒为 0 时，说明闸门没接上（risk 标错），而不是没人用过写操作。"
+    }
+  ]
+}

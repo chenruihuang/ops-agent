@@ -35,6 +35,7 @@ from app.cache.manager import CachedAnswer                        # noqa: E402
 from app.core.config import settings                              # noqa: E402
 from app.pipeline import rag                                      # noqa: E402
 from app.tools import build_registry                              # noqa: E402
+from app.tools.skills import SkillRegistry                        # noqa: E402
 
 PASS = 0
 FAIL = 0
@@ -68,10 +69,17 @@ class FakeCache:
         return self.version
 
     async def lookup(self, query, *, embedding=None):
+        """模拟真实 RedisCache.lookup 的两段语义：
+        embedding=None 是 exact 阶段 —— 语义命中的答案在 exact 段**查不到**。"""
         self.lookups += 1
-        if self.hit is not None:
+        if self.hit is not None and (embedding is not None or self.hit.source != "semantic"):
             return self.hit
         return CachedAnswer(answer="", queried=query, source="miss")
+
+    async def get_semantic(self, query, embedding):
+        if self.hit is not None and self.hit.source == "semantic":
+            return self.hit
+        return None
 
     async def acquire_singleflight(self, query) -> bool:
         self.singleflight = True
@@ -283,7 +291,7 @@ def test_hybrid_flow(monkeypatch) -> None:
 
 
 def test_cache_hit(monkeypatch) -> None:
-    print("缓存命中：直接推流，不检索不调工具")
+    print("缓存命中（语义）：exact 段未命中 → 编码后语义命中，直接推流，不检索不调工具")
     install_fakes(monkeypatch)
     called = {"recall": 0}
 
@@ -304,6 +312,34 @@ def test_cache_hit(monkeypatch) -> None:
     check("仍推 route 事件（可回放决策）", events[1]["type"] == "route", str(types_of(events)))
     check("仅 token + done", set(types_of(events)) == {"meta", "route", "token", "done"},
           str(types_of(events)))
+    check("done 带 tokens_saved", events[-1]["tokens_saved"] == 42, str(events[-1]))
+
+
+def test_exact_cache_hit_skips_embed(monkeypatch) -> None:
+    """D4 性能重构的守护：exact 命中**不许**付 BGE 编码费。
+
+    旧图 embed 排在 cache_lookup 之前，exact 命中也先编码（stage p50 6.33s），
+    缓存命中"首字快"的卖点被编码吃干。现在 exact 段只做一个 Redis GET；
+    谁要是把 embed 挪回 cache_exact 前面，这条用例立刻红。
+    """
+    print("exact 命中：零编码直接回放（性能契约）")
+    install_fakes(monkeypatch)
+
+    async def embed_must_not_run(text):
+        raise AssertionError("exact 缓存命中不该向量化")
+
+    monkeypatch.setattr("app.pipeline.orchestrator.embed_one", embed_must_not_run)
+
+    cached = CachedAnswer(answer="这是 exact 缓存的答案", queried="x", source="exact",
+                          similarity=1.0, route="rag", tokens_saved=42)
+    events = asyncio.run(ask("连接池耗尽该怎么处理？", cache=FakeCache(hit=cached)))
+
+    kinds = types_of(events)
+    check("meta 标为 exact", events[0]["cache"] == "exact", str(events[0]))
+    # "未触发编码"由 embed_must_not_run 兜底：多调一次向量化，本用例直接 AssertionError
+    check("仍正常收尾（回放 + done）",
+          set(kinds) == {"meta", "route", "token", "done"} and kinds[-1] == "done",
+          str(kinds))
     check("done 带 tokens_saved", events[-1]["tokens_saved"] == 42, str(events[-1]))
 
 
@@ -354,6 +390,9 @@ def test_rerank_switch(monkeypatch) -> None:
     而"关掉"有个很容易犯的错 —— 静默跳过。
     那样 SSE 里就看不出这次答案是走了一条更弱的链路，
     于是演示的人、看指标的人都会以为看到的是完整链路。
+
+    但"标注"不等于"算降级"：这里用 `notice` 而不是 `degraded`。
+    两种错都要避免 —— 前者让链路不可见，后者让降级指标失去意义。
     """
     print("重排开关：关掉后不调用，且如实标注")
     install_fakes(monkeypatch)
@@ -369,10 +408,15 @@ def test_rerank_switch(monkeypatch) -> None:
     events = asyncio.run(ask("连接池耗尽该怎么处理？", cache=FakeCache()))
     kinds = types_of(events)
     degs = [e for e in events if e["type"] == "degraded"]
+    notices = [e for e in events if e["type"] == "notice"]
 
     check("关掉后不再调用重排", calls == [], str(calls))
-    check("如实标注 disabled（不静默跳过）",
-          any("rerank:disabled" in str(d.get("reason", "")) for d in degs), str(degs))
+    # 口径修正（D3）：关掉重排是**配置事实**，不是降级。
+    # 原先把它写进 degraded，导致每次缓存未命中都恰好产出一条降级帧 ——
+    # 压测里"降级 72 次"与"miss 72 次"永远相等，指标恒等于未命中数。
+    check("关掉重排不再冒充降级事件", not degs, str(degs))
+    check("如实标注 disabled（降级之外的通道，不静默跳过）",
+          any(n.get("code") == "rerank_disabled" for n in notices), str(notices))
     check("关掉后仍正常回答并收尾", "token" in kinds and kinds[-1] == "done", str(kinds))
     docs = next(e for e in events if e["type"] == "docs")
     check("仍然给出文档来源（上下文没丢）", bool(docs.get("sources")), str(docs))
@@ -395,6 +439,10 @@ def test_rerank_pool_is_recall_pool(monkeypatch) -> None:
     所以这里把它钉住：谁把重排前的候选池截断成一个常数，这条用例就红。
     """
     print("重排候选池 = 召回池全量（不是写死的常数）")
+    # 显式打开重排：这条用例验证的是"重排前的候选池"，必须由用例自己决定开关，
+    # 不能读 .env 的 RERANK_ENABLED —— 自测清单要求把它关掉，
+    # 一关这条用例就会以"没调用重排"的理由假失败（实测踩过：seen == []）。
+    monkeypatch.setattr(settings, "rerank_enabled", True)
     # 刻意用 7：既不是 top_k_retrieve(20) 也不是 top_k_rerank(5)，
     # 这样"恰好等于某个线上默认值"不会让用例假通过。
     pool = [
@@ -429,6 +477,10 @@ def test_no_plan_visible(monkeypatch) -> None:
     install_fakes(monkeypatch)
     monkeypatch.setattr("app.pipeline.orchestrator.plan", lambda decision, question: [])
     registry = build_registry(mock_path="eval/mock_records.json")
+    # skill 命中先于工具计划（"查工单"这句话会命中 ticket_diagnosis），
+    # 本测试要验证的是"计划为空"分支，必须把 skill 匹配也关掉，
+    # 否则 tool_call 帧来自 skill 步骤，测试测到的不是它声称的逻辑
+    registry.skills = SkillRegistry()
 
     events = asyncio.run(ask(
         "帮我查一下工单 INC-2026-0412 的处理进度。", cache=FakeCache(), tools=registry

@@ -86,6 +86,47 @@ _TICKET_FIELD_WEIGHTS: tuple[tuple[str, int], ...] = (
 )
 
 
+# =====================================================================
+# 写工具 —— 与只读工具**分开声明**
+# =====================================================================
+# 为什么不并进 TOOL_SPECS：
+#   1. TOOL_SPECS 是「Java MCP 必须实现的清单」，`scripts/mcp_probe.py` 会断言
+#      远端 tools/list 与它一一对应。写操作不走 MCP（远端没有、也不该有），
+#      并进去会让探针立刻变红。
+#   2. 只读工具的降级链是 cache → mcp → mock；写工具**没有降级** ——
+#      "重启失败就换个数据源重启一次"是事故，不是韧性。
+#
+# `simulated=True` 是这套演示的诚实性基线：这些工具**不会真的动线上**，
+# 返回文本里必须写清楚，事件流里也能看出来。演示时把它讲成"真重启了"，
+# 面试官只要问一句"重启的 API 是哪个"就穿帮。
+WRITE_TOOL_SPECS: tuple[ToolSpec, ...] = (
+    ToolSpec(
+        "restart_service",
+        "重启指定服务的全部实例（写操作，需人工确认；当前为模拟执行）",
+        {
+            "service": "服务名，形如 order-service",
+            "reason": "变更原因，会写进审计日志",
+        },
+        ("service",),
+        risk="dangerous",
+        simulated=True,
+    ),
+    ToolSpec(
+        "scale_service",
+        "调整指定服务的副本数（写操作，需人工确认；当前为模拟执行）",
+        {
+            "service": "服务名，形如 order-service",
+            "replicas": "目标副本数，1~10",
+        },
+        ("service", "replicas"),
+        risk="write",
+        simulated=True,
+    ),
+)
+
+ALL_TOOL_SPECS: tuple[ToolSpec, ...] = TOOL_SPECS + WRITE_TOOL_SPECS
+
+
 def _load_records(path: Path | str) -> dict[str, Any]:
     p = Path(path)
     if not p.exists():
@@ -271,6 +312,60 @@ class MockProvider:
             text=render_alerts(service, firing),
         )
 
+    # ---------------- 写工具（模拟执行）----------------
+    # 这两个方法的**前置闸门不在这里**：能不能进到这个函数，由
+    # app/tools/sandbox.py 在执行前判定（策略 + 人工确认）。
+    # 也就是说 —— 它们被调用时，一定已经有人按过"确认"。
+    # 职责分开的好处：写工具的"业务动作"与"安全边界"可以各自单测。
+    async def restart_service(self, service: str = "", reason: str = "") -> ToolResult:
+        if not service:
+            return ToolResult(tool="restart_service", ok=False, source=self.name,
+                              error="缺少参数 service", text="[未提供服务名]")
+        return ToolResult(
+            tool="restart_service", ok=True,
+            args={"service": service, "reason": reason},
+            data=[{
+                "service": service, "action": "restart", "instances": 3,
+                "strategy": "rolling", "simulated": True,
+            }],
+            source=self.name,
+            text=(
+                f"[模拟执行 · 未真正调用编排接口]\n"
+                f"服务 {service} 的重启动作已放行（滚动重启 3 个实例）\n"
+                f"  变更原因：{reason or '（未填写）'}\n"
+                f"  影响窗口：约 40s，期间约 1/3 请求失败\n"
+                f"  回滚方式：kubectl rollout undo deployment/{service}"
+            ),
+        )
+
+    async def scale_service(self, service: str = "", replicas: Any = 0) -> ToolResult:
+        if not service:
+            return ToolResult(tool="scale_service", ok=False, source=self.name,
+                              error="缺少参数 service", text="[未提供服务名]")
+        try:
+            target = int(replicas)
+        except (TypeError, ValueError):
+            return ToolResult(tool="scale_service", ok=False, source=self.name,
+                              error=f"副本数不是整数：{replicas!r}",
+                              text="[副本数参数非法]")
+        # 契约用逗号而不是 em dash：这两个数是"之前/之后"，读的时候不该被破折号
+        # 糊成一个区间
+        return ToolResult(
+            tool="scale_service", ok=True,
+            args={"service": service, "replicas": target},
+            data=[{
+                "service": service, "action": "scale", "from": 3, "to": target,
+                "simulated": True,
+            }],
+            source=self.name,
+            text=(
+                f"[模拟执行 · 未真正调用编排接口]\n"
+                f"服务 {service} 副本数 3 → {target}（模拟）\n"
+                f"  影响：扩容会新增实例并接入负载；缩容会先摘流量再终止\n"
+                f"  成本变化：按副本数线性变化，请在变更单里注明"
+            ),
+        )
+
     # ---------------- 统一入口 ----------------
     async def call(self, name: str, **args: Any) -> ToolResult:
         """按工具名分派。存在的意义是让 mock 和 MCP 有**同一个调用形状**，
@@ -284,13 +379,13 @@ class MockProvider:
 
     # ---------------- 注册 ----------------
     def install(self, registry: ToolRegistry) -> None:
-        """按 TOOL_SPECS 注册本 provider 的实现。
+        """按 ALL_TOOL_SPECS 注册本 provider 的实现。
 
         用 `getattr` 而不是把 spec 和 handler 成对写死：如果哪天加了 spec
         却忘了实现，会在启动时直接 `AttributeError` 报出来，
         而不是等到线上调用时才返回 500。
         """
-        for spec in TOOL_SPECS:
+        for spec in ALL_TOOL_SPECS:
             handler = getattr(self, spec.name, None)
             if handler is None:
                 raise AttributeError(

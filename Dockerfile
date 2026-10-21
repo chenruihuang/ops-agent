@@ -36,4 +36,13 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=3 \
   CMD curl -fsS http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# 为什么是 1 个 worker 而不是 2：
+# prometheus_client 的默认 REGISTRY 是**进程内**的。多个 uvicorn worker 时，
+# 每个进程各有一份计数器，而 /metrics 只由处理这次请求的那个 worker 返回 ——
+# 于是 Prometheus 每次抓取看到的是"随机某一个 worker 的部分计数"。
+# 表现非常隐蔽：计数器时大时小、告警时有时无、大盘曲线像心电图（实测
+# 容器内两个 worker 分别记到 3 与 2，Prometheus 只看到 1）。
+# 正确做法要么开 multiprocess 模式（PROMETHEUS_MULTIPROC_DIR + MultiProcessCollector），
+# 要么 1 worker × N 副本。本项目是无状态服务，**按副本横向扩**更简单，
+# 也让"每个容器一个进程"与容器资源限制对齐。
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -134,6 +134,15 @@ class RedisCache:
         self._index_ready = False
         self._kb_cache: tuple[int, float] | None = None
 
+    @property
+    def client(self) -> AsyncRedisLike:
+        """裸客户端。只给**需要原子指令**的模块用（目前是安全沙箱的 `GETDEL`）。
+
+        为什么开这个口子而不是再加一层封装：确认凭据的"取出即作废"必须是一条
+        原子命令，任何 try/except 包裹的封装层都会在异常重试时破坏这个语义。
+        """
+        return self._redis
+
     # ------------------------------------------------------------------
     # 工具
     # ------------------------------------------------------------------

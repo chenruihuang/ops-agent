@@ -47,6 +47,13 @@ class ToolSpec:
     description: str
     params: Mapping[str, str] = field(default_factory=dict)
     required: tuple[str, ...] = ()
+    # ---- 安全沙箱（D3 新增）----
+    # `risk` 是**安全边界**，不是元数据：read 之外的工具一律要过沙箱
+    # （见 app/tools/sandbox.py）。放在声明里而不是只放策略表，是为了让
+    # "这个工具会改变线上状态"写在工具定义旁边 —— 新增写工具时漏填 risk
+    # 会被沙箱按"未声明策略"拒绝执行，而不是悄悄放行。
+    risk: str = "read"            # read | write | dangerous
+    simulated: bool = False       # True = 演示用模拟执行，不真动线上服务
 
     def signature(self) -> str:
         args = ", ".join(self.params) or ""
@@ -69,15 +76,37 @@ class ToolResult:
     source: str = "unknown"        # mock | mcp | cache | none
     elapsed_ms: float = 0.0
     error: str = ""
+    # ---- 韧性相关（D2 新增，全部有默认值 → 老调用点不用改）----
+    attempts: int = 1              # 实际尝试次数（>1 说明重试过）
+    breaker: str = ""              # 调用时熔断器状态：closed / half_open / open
+    chain: list[dict[str, Any]] = field(default_factory=list)  # 降级链每一跳的去向
+    cached_from: str = ""          # 缓存命中时，这份数据最初来自 mcp 还是 mock
+    # ---- 安全沙箱（D3 新增）----
+    # status: "" ｜ pending_confirmation（挂起待确认）｜ denied（策略拒绝）
+    #
+    # 为什么不塞进 ok/error：`ok=False` 在现有代码里统一表示"没查到"，
+    # 会被渲染成"暂时不可用"并计入 degraded。而 pending 既不是失败也不是降级，
+    # 它是**正常流程里的一次暂停** —— 混进 ok=False 会让降级率虚高。
+    status: str = ""
+    confirm: dict[str, Any] = field(default_factory=dict)   # 待确认动作的公开字段
+    simulated: bool = False        # True = 结果是模拟执行出来的，没有真动线上
 
     @property
     def empty(self) -> bool:
         return self.ok and not self.data
 
+    @property
+    def needs_confirm(self) -> bool:
+        return self.status == "pending_confirmation"
+
     def as_event(self) -> dict[str, Any]:
-        """SSE 事件负载。`preview` 截断到一行，避免把大 JSON 灌进事件流。"""
+        """SSE 事件负载。`preview` 截断到一行，避免把大 JSON 灌进事件流。
+
+        `attempts` / `breaker` / `degraded_from` 三字段让前端能直接显示
+        "重试 2 次后从 mock 取数"这类事实 —— 降级不该只藏在日志里。
+        """
         preview = (self.text or "").replace("\n", " ").strip()
-        return {
+        event = {
             "type": "tool_result",
             "tool": self.tool,
             "ok": self.ok,
@@ -86,7 +115,32 @@ class ToolResult:
             "records": len(self.data) if isinstance(self.data, (list, tuple)) else int(bool(self.data)),
             "preview": preview[:120],
             "error": self.error,
+            "attempts": self.attempts,
         }
+        if self.status:
+            event["status"] = self.status
+        if self.simulated:
+            # 演示时最容易被讲错的一件事：把"模拟执行"说成"已重启"。
+            # 把这句写进事件流，屏幕上就没法含糊过去。
+            event["simulated"] = True
+        if self.confirm:
+            # token 只在这一帧出现一次；前端拿到就必须存住，否则要重新发起
+            event["token"] = self.confirm.get("token", "")
+            event["risk"] = self.confirm.get("risk", "")
+        if self.breaker:
+            event["breaker"] = self.breaker
+        # 只在**真的降级过**时带链，避免每次调用都往事件流里塞噪音。
+        #
+        # miss 不算降级：缓存未命中是正常运营事件，命中那一跳之前必然有一次 miss。
+        # 早期把 miss 也算进来，健康路径的每个事件都带 `degraded_from:["cache"]`，
+        # 前端只能得出结论"缓存一直在坏" —— 指标/事件说得不清楚比没有更糟。
+        if self.ok:
+            fallbacks = [h for h in self.chain[:-1] if h.get("outcome") != "miss"]
+        else:
+            fallbacks = [h for h in self.chain if h.get("outcome") != "miss"]
+        if fallbacks:
+            event["degraded_from"] = [h.get("source") for h in fallbacks]
+        return event
 
 
 Handler = Callable[..., Awaitable[ToolResult]]
@@ -181,7 +235,15 @@ def render_tool_context(results: Sequence[ToolResult]) -> str:
     """
     parts: list[str] = []
     for r in results:
-        if r.ok:
+        if r.needs_confirm:
+            # 挂起 ≠ 失败，更 ≠ 已执行。措辞必须让模型无法顺着写出"已完成"。
+            parts.append(
+                f"[工具 {r.tool} · 已挂起，等待人工确认]\n{r.text}\n"
+                f"（该操作尚未执行。确认之前不得声称已经完成）"
+            )
+        elif r.status == "denied":
+            parts.append(f"[工具 {r.tool} · 被安全策略拒绝]\n{r.text}（原因：{r.error}）")
+        elif r.ok:
             parts.append(f"[工具 {r.tool} · 来源 {r.source}]\n{r.text}")
         else:
             parts.append(f"[工具 {r.tool} · 调用失败]\n{r.text}（原因：{r.error}）")

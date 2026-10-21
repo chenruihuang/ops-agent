@@ -19,6 +19,19 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ---- 追踪（本地 JSONL 全量 + Langfuse 采样上报）----
+    # 必须放在最前面：Langfuse 客户端构造实测 356ms（初始化 OTEL provider），
+    # 这是**一次性**成本；放到请求路径里去 new 会让 P50 直接翻倍。
+    # 初始化失败只降级不抛 —— 可观测是锦上添花，不能决定服务能不能起来。
+    try:
+        from app.observability.tracing import build_tracer, configure
+
+        app.state.tracer = configure(build_tracer(settings=settings))
+        log.info("tracing ready: %s", app.state.tracer.sink_description)
+    except Exception as exc:  # noqa: BLE001
+        log.error("tracing init failed（埋点退化为 no-op）: %s", exc)
+        app.state.tracer = None
+
     # ---- 缓存 ----
     try:
         from app.cache.factory import build_cache
@@ -57,6 +70,18 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.error("tool registry init failed, tool/hybrid 链路将降级: %s", exc)
         app.state.tools = None
+
+    # ---- 评估产物回填 ----
+    # 评估指标是进程内 gauge，重启即清零；而"面板空"和"没跑过评估"看起来一样。
+    # 所以启动时从快照回填（快照由 POST /admin/eval/metrics 落盘）。
+    try:
+        from app.observability.metrics import restore_eval
+
+        restored = restore_eval()
+        if restored:
+            log.info("eval metrics restored from snapshot: %s", restored)
+    except Exception as exc:  # noqa: BLE001 - 回填失败不该影响启动
+        log.warning("eval metrics restore failed: %s", exc)
 
     # ---- 索引（提前加载）----
     # 不预热的话，第一个请求会承担读 points.jsonl + 建 BM25 内存索引的时间，
@@ -139,6 +164,16 @@ async def lifespan(app: FastAPI):
         try:
             await memory.aclose()
         except Exception:
+            pass
+
+    # 追踪必须在最后收尾：先 flush 再 shutdown，否则最后一批 span 会被丢掉，
+    # 表现为"最后几次请求在 Langfuse 里查不到"。放到线程里执行是因为
+    # flush 是同步阻塞的（实测连不上时 0.9s），不该占住事件循环。
+    tracer = getattr(app.state, "tracer", None)
+    if tracer is not None:
+        try:
+            await asyncio.to_thread(tracer.close)
+        except Exception:  # noqa: BLE001
             pass
 
 

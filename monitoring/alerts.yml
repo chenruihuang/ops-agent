@@ -25,6 +25,28 @@ groups:
         annotations:
           summary: "5xx 错误率超过 5%"
 
+      # 缓存层错误：cache_requests_total{result="error"} 是**已经存在**的信号
+      # （manager.py 在 Redis 读写/搜索失败时打点）。第一版这里写的是
+      # degraded_responses_total{stage="cache"} —— 那个指标根本没人写，
+      # 于是停掉 Redis 时告警永不 firing，T2 只能回填成 T1，MTTR 变成一个假数。
+      # 教训：告警表达式必须对着 /metrics 里**真实存在且有值**的指标写。
+      - alert: CacheDegraded
+        expr: sum(rate(cache_requests_total{result="error"}[1m])) > 0
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "缓存读写失败（Redis 不可用或协议不兼容），命中率将下降"
+
+      # 召回通道降级：某一路通道失败（qdrant 挂 / BM25 索引缺失）
+      - alert: RecallChannelDegraded
+        expr: sum(rate(degraded_responses_total{stage="recall"}[1m])) > 0
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "召回通道降级：{{ $labels.reason }}（答案依据可能不完整）"
+
       # 依赖熔断器打开
       - alert: CircuitBreakerOpen
         expr: circuit_breaker_state{state="open"} > 0

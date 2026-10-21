@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
+    uid: prometheus        # 固定 uid：dashboard JSON 里按 uid 引用，否则导入后面板全是 "datasource not found"
     type: prometheus
     access: proxy
     url: http://prometheus:9090

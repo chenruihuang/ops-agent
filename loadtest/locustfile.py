@@ -96,7 +96,8 @@ def stream_chat(question: str, host: str, timeout: float = 120.0):
     ttft = None
     cache_source = "unknown"
     route = "unknown"
-    degraded = 0
+    degraded: list[str] = []
+    notices: list[str] = []
     tokens = 0
 
     with requests.post(
@@ -118,7 +119,13 @@ def stream_chat(question: str, host: str, timeout: float = 120.0):
             elif kind == "route":
                 route = event.get("intent", route)
             elif kind == "degraded":
-                degraded += 1
+                # 记原因而不只是计数：只报"72 次"没法判断是不是真故障。
+                # 实测踩过：关掉重排时每一题都发 degraded(rerank:disabled)，
+                # 于是降级数恰好等于缓存未命中数（72 miss → 72 degraded），
+                # 看着像"依赖不稳"，其实是配置。
+                degraded.append(f"{event.get('stage')}:{event.get('reason')}")
+            elif kind == "notice":
+                notices.append(str(event.get("code")))
             elif kind == "token":
                 if ttft is None:
                     ttft = time.perf_counter() - t0
@@ -126,7 +133,7 @@ def stream_chat(question: str, host: str, timeout: float = 120.0):
             elif kind == "done":
                 break
 
-    return ttft, time.perf_counter() - t0, cache_source, tokens, route, degraded
+    return ttft, time.perf_counter() - t0, cache_source, tokens, route, degraded, notices
 
 
 class OpsChatUser(HttpUser):
@@ -148,7 +155,8 @@ class OpsChatUser(HttpUser):
     def _ask(self, question: str, label: str) -> None:
         start = time.perf_counter()
         try:
-            ttft, total, cache_source, tokens, route, degraded = stream_chat(question, self.host)
+            ttft, total, cache_source, tokens, route, degraded, notices = stream_chat(
+                question, self.host)
             if ttft is None:
                 raise RuntimeError("未收到任何 token")
 
@@ -172,8 +180,15 @@ class OpsChatUser(HttpUser):
             )
             STATS["cache"][cache_source] = STATS["cache"].get(cache_source, 0) + 1
             STATS["route"][route] = STATS["route"].get(route, 0) + 1
-            STATS["degraded"] += degraded
-            STATS["ttft"].append(ttft * 1000)
+            for reason in degraded:
+                STATS["degraded"][reason] = STATS["degraded"].get(reason, 0) + 1
+            for code in notices:
+                STATS["notice"][code] = STATS["notice"].get(code, 0) + 1
+            # TTFT 必须按 label 分开存：hot（缓存命中）与 cold（未命中）是
+            # **两个不同的分布**，混在一起算 P95 得到的是混合物分位数 ——
+            # 25% 的 miss 长尾会把整体 P95 拖到 130s，而这个数字既不代表
+            # "缓存命中有多快"，也不代表"真实链路有多快"，只能吓人。
+            STATS["ttft"].setdefault(label, []).append(ttft * 1000)
         except Exception as exc:  # noqa: BLE001
             self.environment.events.request.fire(
                 request_type="SSE",
@@ -185,7 +200,7 @@ class OpsChatUser(HttpUser):
             )
 
 
-STATS: dict = {"cache": {}, "route": {}, "ttft": [], "degraded": 0}
+STATS: dict = {"cache": {}, "route": {}, "ttft": {}, "degraded": {}, "notice": {}}
 
 
 @events.test_stop.add_listener
@@ -215,14 +230,27 @@ def _report(environment, **_kwargs):
     for route, count in sorted(STATS["route"].items(), key=lambda x: -x[1]):
         print(f"  {route:<12} {count:>6}  {count / total:.1%}")
     if STATS["degraded"]:
-        print(f"  降级事件          {STATS['degraded']} 次"
-              f"（依赖异常时发生；应为 0 或极少，否则说明有链条不稳定）")
+        print(f"  降级事件          {sum(STATS['degraded'].values())} 次"
+              "（按原因拆开看：rerank 关闭属配置，不该算降级）")
+        for reason, count in sorted(STATS["degraded"].items(), key=lambda x: -x[1]):
+            print(f"    {reason:<32} {count:>6}")
+    else:
+        print("  降级事件          0 次")
 
+    if STATS["notice"]:
+        print("  配置提示（非故障）")
+        for code, count in sorted(STATS["notice"].items(), key=lambda x: -x[1]):
+            print(f"    {code:<32} {count:>6}")
+
+    # TTFT 分 label 报：hit 与 miss 是两个分布，混算的 P95 只能用来吓人。
     if STATS["ttft"]:
-        ordered = sorted(STATS["ttft"])
         print("-" * 56)
-        print(f"  TTFT P50          {ordered[len(ordered) // 2]:.0f} ms")
-        print(f"  TTFT P95          {ordered[int(len(ordered) * 0.95)]:.0f} ms")
+        for label in sorted(STATS["ttft"]):
+            ordered = sorted(STATS["ttft"][label])
+            n = len(ordered)
+            p50 = ordered[n // 2]
+            p95 = ordered[min(n - 1, int(n * 0.95))]
+            print(f"  TTFT[{label:<4}] n={n:<5} P50 {p50:>8.0f} ms   P95 {p95:>8.0f} ms")
     print("=" * 56)
 
 

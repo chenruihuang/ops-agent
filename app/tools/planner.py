@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.pipeline.intent import RouteDecision
+from app.pipeline.intent import RouteDecision, replicas_of
 
 # 句首的礼貌/衔接词（可连续出现）
 _LEAD = re.compile(
@@ -72,6 +72,44 @@ class ToolCall:
         return f"{self.name}({', '.join(f'{k}={v!r}' for k, v in self.args.items())})"
 
 
+# 写操作里"原因"字段的清洗：去掉 shell 元字符与换行。
+#
+# 为什么清洗而不是直接拒绝：原因来自**用户原话**，里面出现分号是正常的
+# （"发布后连接泄漏；先重启"）。把合法输入判成非法，用户只会学会"少说话"，
+# 而审计日志要的恰恰是他多说。所以这里做**收敛**（只留安全字符），
+# 让它在策略层一定通过 —— 策略层不为"用户语气"服务，只为"参数形状"服务。
+_REASON_CLEAN = re.compile(r"[;|&$`<>\\\n\r\t]")
+
+_RESTART_HINT = re.compile(r"(?:重启|重新启动|滚动重启)")
+_SCALE_HINT = re.compile(r"(?:扩容|缩容|扩到|缩到|副本)")
+
+
+def _reason_of(query: str, limit: int = 60) -> str:
+    text = _REASON_CLEAN.sub(" ", query or "")
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def _write_calls(service: str, query: str) -> list[ToolCall]:
+    """从「服务名 + 动作」推出写工具调用。
+
+    抽不出关键参数就**不规划**：`scale_service` 没有目标副本数时宁可不执行，
+    也不拿默认值去改线上 —— "默认 3 副本"这种善意猜测在容量场景里就是事故。
+    """
+    calls: list[ToolCall] = []
+
+    if _SCALE_HINT.search(query):
+        target = replicas_of(query)
+        if target is not None:
+            calls.append(ToolCall("scale_service",
+                                  {"service": service, "replicas": target}))
+
+    if _RESTART_HINT.search(query):
+        calls.append(ToolCall("restart_service",
+                              {"service": service, "reason": _reason_of(query)}))
+
+    return calls
+
+
 def extract_keywords(query: str, *, limit: int = 3) -> list[str]:
     """从中文问句里抽"内容词"，用于关键词检索工单。
 
@@ -115,8 +153,11 @@ def extract_keywords(query: str, *, limit: int = 3) -> list[str]:
 def plan(decision: RouteDecision, query: str) -> list[ToolCall]:
     """规划工具调用。
 
-    顺序是**确定性的**：先精确号（工单号/资产号），再维度查询。
+    顺序是**确定性的**：先精确号（工单号/资产号），再维度查询，最后写操作。
     确定性对测试很重要 —— 否则没法断言"这题应该调这几个工具"。
+
+    写操作放**最后**：先读现场（告警/工单），再改。哪怕两者在 node_tools 里
+    是并行发出的，结果列表的顺序也保持"先看后动"，事件流读起来才是人话。
     """
     if not decision.needs_tool:
         return []
@@ -140,6 +181,12 @@ def plan(decision: RouteDecision, query: str) -> list[ToolCall]:
         keywords = extract_keywords(query)
         if keywords:
             calls.append(ToolCall("query_ticket_by_keyword", {"keyword": " ".join(keywords)}))
+
+    # 写操作最后追加。`needs_write` 由路由给出（唯一的"想干什么"判定点），
+    # planner 不自己再解析一遍消息 —— 两处判定必然漂。
+    if getattr(decision, "needs_write", False):
+        for svc in ents.services:
+            calls.extend(_write_calls(svc, query))
 
     return calls
 
