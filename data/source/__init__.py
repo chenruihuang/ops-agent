@@ -22,6 +22,14 @@ from data.source.services import ERROR_CODES, SERVICES
 # 因此放在最后导入，避免在包初始化中途触发子模块加载。
 from data.source.longform import LONGFORM_DOCS
 
+# 舰队扩展：在手写源全部装配完之后原位扩展（60 个服务 × 15 类文档 = 900 篇）。
+# apply() 只在此处调用一次；子模块自身不触发，避免重复扩展。
+# 注意顺序：必须晚于 longform 导入 —— longform 的容量基线表基于 12 个核心服务，
+# 不应看到舰队扩展（见 fleet.py 模块注释）。
+from data.source import fleet as _fleet
+
+_fleet.apply()
+
 __all__ = [
     "SERVICES",
     "ERROR_CODES",

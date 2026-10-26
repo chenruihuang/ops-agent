@@ -42,7 +42,7 @@ python -m scripts.selftest                                   # 端到端全 PASS
 
 - 设计 **LangGraph 10 节点状态机**编排「路由 → 记忆 → 缓存 → 单飞 → 工具∥召回并行 → 生成」，SSE 逐帧事件协议（meta/route/tool_call/docs/token/notice/degraded/done），缓存命中路径同样可观测。
 - 实现 **4 类意图规则路由**（rag / tool / hybrid / chitchat）：实体优先于寒暄、实时信号与知识信号可叠加为 hybrid；路由是零依赖纯函数，可单测、可离线评估。
-- RAG 检索采用 **BM25 + 向量双路召回 + RRF 融合**（检索层 recall@k 0.8958，单路 0.8646 / 0.8750）；答案侧自建 52 题标注集，**context recall 0.8785 / 文档级 AP 0.7841 / 关键事实命中 0.8237**（口径见 README，非 RAGAS）。
+- RAG 检索采用 **BM25 + 向量双路召回 + RRF 融合**（检索层 recall@k 0.6421，单路 0.6029 / 0.6075；重排行 2026-10-24 已复测：RRF+重排 strict 0.6029 / MRR 0.7518 / hit 0.9617——重排买名次不买覆盖，线上关闭，见 `matrix_qdrant_rerank_20261024-170116.json`）；答案侧自建 187 题标注集，**context recall 0.6184 / 文档级 AP 0.4774 / 关键事实命中 0.8538**（口径见 README，非 RAGAS；2026-10-23 语料扩容至 1010 文档 / 3784 点后的新口径）。
 - 缓存三层防线：**exact 命中 → 语义 KNN 命中（带护栏）→ singleflight 合并并发未命中**；阶梯压测（10→120 并发，1804 请求）未命中并发只打一次 LLM、**降级仅 1 次真实故障**；另一轮 287 请求的分布中综合命中率 **74.9%**（exact 73.2% / semantic 0.3%）。
 - 韧性设计：**熔断（外）→ 重试（内，只重试瞬态/超时/5xx）**，纵向降级链 `mcp → cache → mock`，横向按 Skill 声明式 fallback；故障注入 10 轮：**stop-qdrant 可用性 100%、告警检测 0.55s、MTTR 27.95s**（MTTR=T3−T2，测量条件见报告）。
 - 可观测：**18 个自定义 Prometheus 指标 + 31 面板 Grafana 大盘 + JSONL/Langfuse 双后端 trace**；为「指标名写错不报错只画空线」写守门测试（指标存在 / 有写入点 / 面板有 noValue）。
@@ -74,7 +74,7 @@ Python 3.12 / FastAPI / LangGraph / Redis(RediSearch) / Qdrant / BM25 / RRF / Pr
 「一条请求进来是 LangGraph 的 10 节点状态机：先规则路由分四类——知识、实时、混合、闲聊；混合会 fan-out，工具和召回**并行**跑。中间有两级缓存和 singleflight：命中直接回放 SSE；没命中才走完整链路，并发未命中只让一个请求去打 LLM。工具侧是 Java 的 MCP Server，外面套熔断→重试→降级链。」
 
 **1:30–2:30 证据**
-「三组数：检索层 RRF 0.8958 高于单路；答案侧 52 题 recall 0.8785；故障注入停掉 Qdrant，可用性 100%、检测 0.55 秒、MTTR 28 秒——因为向量挂了还有 BM25，降级是设计出来的，不是运气。」
+「三组数：检索层 RRF 0.6421 高于单路；答案侧 187 题 recall 0.6184；故障注入停掉 Qdrant，可用性 100%、检测 0.55 秒、MTTR 28 秒——因为向量挂了还有 BM25，降级是设计出来的，不是运气。」
 
 **2:30–3:00 权衡（这句最加分）**
 「我知道它的短板：embed 排在缓存查询之前，exact 命中也要付一次 BGE 编码，所以 hot/cold 的 TTFT 几乎一样；stop-redis 那次 162 秒才恢复，因为延迟型故障没触发告警，只靠超时兜底。这两个都在 README 的「已知瓶颈」里，下一步分别是拆节点和补慢故障告警。」
@@ -156,7 +156,7 @@ python -m scripts.mcp_probe          # 19/19 再确认一次
 | 降级链路的「真实」怎么证明？ | SSE 里 `source=mock`/`degraded_from`、`breaker=open`，指标 `tool_calls_total{source}`、`degraded_responses_total`；停掉 java-mcp 实测一条请求即可复现。 |
 | 记忆存在哪，为什么不用进程内？ | ①工作记忆=LangGraph state，请求结束即丢；②会话=Redis list 滑窗；③长期事实=Redis hash。进程内记忆会让横向扩展失效。 |
 | 指标口径踩过什么坑？ | `llm_requests_total` 当请求数（缓存命中不计）→ 换成 `chat_requests_total`；0/0 被 clamp 成 0% → 改 noValue；配置关闭被当降级 → 改 notice。 |
-| 数据怎么评估的？ | 52 题标注集（48 题有 golden），答案侧：context recall、文档级 AP、关键事实命中率、弃答率；脚本 `--rescore` 可离线复算。 |
+| 数据怎么评估的？ | 187 题标注集（183 题有 golden），答案侧：context recall、文档级 AP、关键事实命中率、弃答率；脚本 `--rescore` 可离线复算。 |
 | 项目短板？ | ①embed 在缓存查询前，hot≈cold；②延迟型故障无告警，stop-redis 靠超时兜底 162s；③没接 RAGAS/LLM-as-judge。 |
 | 写操作怎么防止模型乱执行？ | 工具按 `risk` 分级，read 之外一律过沙箱：参数白名单（值白名单优先于正则，`payment-gateway` 重启直接禁）→ 挂起发一次性 token → 确认执行。**确认接口不收 args**，要执行什么从服务端快照读 —— 这是防「确认 A 执行 B」的关键。 |
 | 确认后「继续执行」怎么做的？ | 落库 + 新请求续跑（`POST /chat/confirm`），不是挂住 SSE。理由：挂 10 分钟会被代理掐断、进程重启全丢、多副本对不上。也说明为什么没用 `interrupt()`：它依赖 checkpointer，本项目还是 backlog。 |
@@ -168,7 +168,7 @@ python -m scripts.mcp_probe          # 19/19 再确认一次
 
 1. **可用性** = 故障注入期间探测请求成功率，不是 SLA。
 2. **MTTR** = T3−T2（检测到 → 恢复），必须同时报检测延迟和测量条件。
-3. **检索 recall 0.8958** 是检索层指标，**答案 recall 0.8785** 是答案侧指标，不要混用。
+3. **检索 recall 0.6421** 是检索层指标，**答案 recall 0.6184** 是答案侧指标，不要混用。
 4. **stop-redis 162s** 要主动讲成「慢故障缺告警」的待办，不要藏。
 5. **命中率 74.9%** 要说明是「那轮压测的分布」，不是永久能力。
 6. **写工具是 `simulated=true`**，返回里写着「未真正调用编排接口」——不要讲成真重启了。

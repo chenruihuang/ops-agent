@@ -21,6 +21,7 @@ import argparse
 import html
 import json
 import subprocess
+import time
 from datetime import date
 from pathlib import Path
 
@@ -507,6 +508,18 @@ tr:last-child td{border-bottom:none}
 """
 
 
+# =====================================================================
+# 舰队扩展：前 42 个舰队服务 ×（终端日志 + 监控面板）= 84 张，合计 104 张。
+# 场景由 scripts/screenshot_fleet.py 从 data/source/fleet.py 同源派生，
+# 数字与文本语料共用同一套公式（截图里的数字 = 文档里的数字 = 评估锚点）。
+# 放在渲染函数之前、SCENES 定义之后：gen_image_transcripts 导入 SCENES
+# 时会一并带出舰队场景，转写自动覆盖，无需额外步骤。
+# =====================================================================
+from scripts.screenshot_fleet import extra_scenes as _fleet_extra_scenes  # noqa: E402
+
+SCENES.extend(_fleet_extra_scenes())
+
+
 def esc(text: str) -> str:
     return html.escape(text, quote=False)
 
@@ -602,6 +615,25 @@ def shoot(chrome: str, html_path: Path, png_path: Path, profile: Path) -> None:
         raise RuntimeError(f"截图失败 {png_path.name}: {proc.stdout[-300:]} {proc.stderr[-300:]}")
 
 
+def shoot_with_retry(chrome: str, html_path: Path, png_path: Path, profile: Path,
+                     attempts: int = 3) -> None:
+    """Chrome headless 偶发 60s 超时（首启慢 / profile 抖动），重试即可恢复。
+
+    不加重试时批量渲染会因单张抖动整批中断 —— 20 张时代没暴露，
+    104 张时代一次真实超时就毁掉整轮生成。
+    """
+    last: Exception | None = None
+    for a in range(attempts):
+        try:
+            shoot(chrome, html_path, png_path, profile)
+            return
+        except (subprocess.TimeoutExpired, RuntimeError) as exc:
+            last = exc
+            print(f"    [RETRY {a + 1}/{attempts}] {png_path.name}: {type(exc).__name__}", flush=True)
+            time.sleep(2)
+    raise last  # type: ignore[misc]
+
+
 def clean_tmp(tmp_dir: Path) -> tuple[int, int]:
     """清理渲染中间产物（HTML + Chrome profile）。
 
@@ -664,7 +696,7 @@ def main() -> int:
         html_path.write_text(html_text, encoding="utf-8")
 
         png_path = IMG_DIR / f"{scene['id']}.png"
-        shoot(chrome, html_path, png_path, profile)
+        shoot_with_retry(chrome, html_path, png_path, profile)
         size_kb = png_path.stat().st_size / 1024
         print(f"  [OK] {scene['id']}.png  ({size_kb:.0f} KB)  {scene['caption'][:36]}...")
 

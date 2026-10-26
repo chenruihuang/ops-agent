@@ -79,7 +79,7 @@ Spring Boot 实现 MCP 仿真宿主（5 个运维工具，JSON-RPC over HTTP）�
 
 **D. 面试叙述准备**
 
-- 每条成果都对应一个"踩过的坑"故事（假降级、指标分裂、并发写坏 trace 文件、边等确认边生成），比概念好讲得多；`docs/DELIVERY_D2.md` 的追答速查、`docs/STUDY_PLAN.md` 的 20 题自测、本文末两个面试素材部分就是为此准备的。
+- 每条成果都对应一个"踩过的坑"故事（假降级、指标分裂、并发写坏 trace 文件、边等确认边生成），比概念好讲得多；`docs/DELIVERY_D2.md` 的追答速查、`docs/STUDY_PLAN.md` 的 20 题自测、本文末三个面试素材部分就是为此准备的。
 - 沙箱那条准备好现场演示路径：`python -m scripts.sandbox_demo`（挂起 → 审批 → 一次性凭据失效），2 分钟讲清第 5 条。
 
 ---
@@ -179,3 +179,32 @@ Spring Boot 实现 MCP 仿真宿主（5 个运维工具，JSON-RPC over HTTP）�
 
 - 现状：API Key 鉴权、写操作沙箱、参数白名单。
 - 工业级：**prompt 注入防护**（检索到的文档内容是不可信输入——知识库被投毒即可劫持答案，需要指令/数据隔离与输出检测）；工具输出消毒（MCP 返回内容同样不可信）；密钥轮转与托管（项目 .env 曾泄露已轮转——可以主动讲这个教训）。
+
+---
+
+## 面试素材三：每项技术的选型原因与更好的替代方案
+
+> 讲法建议：不要背表，挑 3–4 个能讲出"取舍依据"的展开（推荐：编排、缓存存储、熔断、路由）。
+> 万能句式："当时约束是 X，所以选了 Y；Y 的代价是 Z，当 X 变化（流量/团队/规模）时，我会换成 W。"
+
+| 技术 | 为什么选它（真实约束） | 更好的方案（什么条件下换） |
+|---|---|---|
+| **LangGraph**（编排） | 需要"条件边 + 并行扇出 + 人在环挂起恢复"三个能力同框架；状态显式（TypedDict），13 个节点可逐个离线测试——196 项测试全离线跑通就是靠它 | 流程变简单（纯线性）→ 直接 FastAPI 顺序调用，框架是负债；多 Agent 对话博弈场景 → AutoGen/CrewAI 更合适；**坚决不用 Dify/RAGFlow/FastGPT 当基座**：黑盒编排让"评估口径"不受控——本项目最核心的资产就是"每个数字能复现"，低代码平台做不到 |
+| **FastAPI + SSE**（传输） | 单向推送 + 自动重连 + `EventSource` 原生支持；代理/网关兼容性比 WebSocket 好（nginx 只需关 buffering） | 需要客户端中途发消息（打断生成、补充参数）→ WebSocket 或 HTTP/2 双向流；本项目挂起轮用独立 `POST /chat/confirm` 补交互，SSE 够用 |
+| **Redis + RediSearch**（缓存） | 一个组件同时承担：exact 缓存、语义缓存（HNSW KNN）、singleflight 锁、确认凭据、kb_version 元数据——运维面少一个组件；GETDEL/SET NX/Lua 都是现成原子原语 | 语义缓存规模大（百万级）或需要过滤语法更强 → Qdrant（本项目向量检索已在用，schema 一样，迁移成本可控）；Redis 语义索引需要 RediSearch 模块且锁 RESP2 协议（RESP3 下结构变化会静默 miss），这是真实运维成本 |
+| **Qdrant**（向量库） | payload 过滤（kb_version 隔离新旧知识库）+ HNSW 调参直接；单二进制 Docker 部署轻 | 千万级+ 多租户 → Milvus；已重度使用 PostgreSQL → pgvector 省一个组件；依赖里同时装了 chromadb 是为了评估脚本横向对照后端，不是生产双栈 |
+| **BM25 + 向量 + RRF**（召回） | 消融数据说话：BM25 0.865 / 向量 0.875 / RRF 0.896——两路覆盖面不同（BM25 精确匹配型号/编码，向量管同义改写），谁都不能去；bm25s 纯 NumPy 实现，离线测试零依赖 | 语料高度口语化、无编号实体 → 单路向量+重排足够；语料极大 → 加一层标量预过滤或 ColBERT 式 late-interaction；RRF 不需要调权重（k=60 固定），比加权融合好落地 |
+| **bge-small-zh-v1.5**（embedding） | 中文优化、512 维小模型 CPU 可跑（个人项目无 GPU）；全离线测试因此可行 | **已知硬约束：输入上限 512 字符，超限静默截断**——长文档必须先切片；换 bge-m3（8192 长度）可解决但要同步改切片粒度与全部缓存 key（模型名在 key 里）；上 API embedding（OpenAI/智源）换延迟与质量，代价是离线测试体系失效 + 按量付费 |
+| **bge-reranker-base**（重排） | 消融显示重排 recall@5 从 0.896 → 0.920，收益真实；CPU 推理可控（rerank_max_per_doc 限流防雪崩） | 预算允许 → Cohere Rerank / bge-reranker-v2-m3（效果更好，API 化）；重排收益被上下文预算吃掉时先放开预算再谈排序（本项目实测教训） |
+| **自研熔断/重试**（不用 pybreaker/tenacity） | pybreaker 是同步 API，拿不到带 trace span 的调用上下文；tenacity 管不了"多次重试只算一次熔断失败信号"；时钟与 sleep 可注入，测试不用真等——韧性内核 100% 被离线测试覆盖 | 生产化首选**替别人维护的轮子**：resilience4j（Java 侧）、polly（.NET）、Python 生态确实没有异步熔断的成熟选项，这正是自研的辩护点；引入 Envoy 后流量层熔断下沉，应用层只留语义降级 |
+| **正则意图路由**（不用模型） | 52 题标注集可评估、可解释、零成本零延迟；误判代价不对称（漏 rag 可恢复、漏 tool 静默丢答案），规则可以刻意偏向安全侧 | 流量积累后 → 小分类器（BERT-tiny）或 LLM 结构化输出主判 + 规则兜底（写操作永远过规则红线）；详见面试素材二第 1 条 |
+| **DeepSeek**（LLM） | 中文运维语料表现好、API 便宜（个人项目成本约束）；OpenAI 兼容协议，换供应商只改 base_url | 需要更强推理 → 换大模型（协议同）；生产多供应商 → LiteLLM 网关做主备切换与成本看板——但**先给 LLM 调用加熔断**，换供应商解决不了"供应商挂了怎么办" |
+| **Langfuse**（trace 云端） | 开源自托管、OTel 兼容；本地 jsonl 是全量事实源（可写断言），Langfuse 是采样上报的看板，两者分工明确 | 团队已用 Datadog/Tempo → 直接 OTel SDK 不必多接一家；注意现状缺口：LangGraph 节点是独立 asyncio task，OTEL contextvar 跨节点丢失，span 树是平的（父子关系记在 metadata 里） |
+| **Docker Compose + nginx**（部署） | 单机全栈（api×2、java-mcp、redis、qdrant、prometheus、grafana、nginx）一条 `docker compose up` 拉起；nginx 做 TLS/限流/被动摘除够用 | 多机/自动伸缩 → k8s（但要付出双倍运维复杂度，个人项目不值）；服务间通信复杂后 → Envoy/Istio，熔断限流下沉 sidecar |
+| **pytest 离线测试体系**（710 条 check） | 所有外部依赖（LLM/Redis/Qdrant/MCP）都可注入假实现且与真签名一致；`check()` 参与退出码、计数从数据派生——测试数字本身也可信 | 这条不建议换方案，建议讲**为什么 mock 可信**：假实现与真实现同签名、降级行为一致（mcp mock 与 Java 宿主同契约），且关键契约有真机探针二次验证（19 条 mcp_probe） |
+
+**三个高频追问的展开**：
+
+1. "为什么不用 Dify/LangChain 全家桶？"——编排选 LangGraph 而不是低代码平台的根本原因不是功能，是**评估口径**：本项目的检索消融、答案侧评估、故障演练全部要求数字可复现，黑盒平台里"为什么召回 5 片而不是 8 片"无法回答。（requirements 里有 langchain-core，只用于与 LangGraph 的消息类型兼容，编排本体没用 LangChain 链。）
+2. "语义缓存为什么不直接用 GPTCache？"——GPTCache 的护栏是可配置相似度阈值一项；本项目的锚点一致性 + 长度比护栏是业务语义层（数字不同答案相反必须拦），写在自己可控的纯函数里，测试可穷举、指标可归因（`cache_guard_rejected_total` 按 reason 分桶）。
+3. "这套架构哪个环节最先撑不住？"——**embedding 编码**：CPU 上 bge-small 是当前 TTFT 主导项（冷路径），流量上来后第一件事是 GPU 推理或 API 化 embedding，第二是 breaker 状态迁 Redis（多副本阈值放大 N 倍），第三才是换向量库。把"扩容顺序"讲清楚比列组件名更能体现容量意识。

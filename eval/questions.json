@@ -1082,5 +1082,2735 @@
       "症状隐蔽：链路不是断了而是分裂成两棵树，看链路图容易误判为两个独立请求"
     ],
     "notes": "检索类型: longdoc"
+  },
+  {
+    "id": 53,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「消息推送中心」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-push",
+      "err-msg-push"
+    ],
+    "answer_anchors": [
+      "MSG-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 MSG-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 54,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「消息推送中心」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 MSG-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-msg-push-lat",
+      "rb-msg-push-oom"
+    ],
+    "answer_anchors": [
+      "500",
+      "1",
+      "MSG-503-001"
+    ],
+    "key_points": [
+      "P99 > 500ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "MSG-503-001 集中 → 依赖问题，按 rb-msg-push-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 55,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 消息推送中心 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-msg-push-01",
+      "svc-msg-push"
+    ],
+    "answer_anchors": [
+      "@msg-oncall（消息域）",
+      "消息域"
+    ],
+    "key_points": [
+      "值班组是 @msg-oncall（消息域）",
+      "消息推送中心 属于消息域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 56,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「消息推送中心」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-msg-push",
+      "rb-msg-push-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 57,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 消息推送中心 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-msg-push-res",
+      "rb-msg-push-oom"
+    ],
+    "answer_anchors": [
+      "70",
+      "75"
+    ],
+    "key_points": [
+      "CPU 告警阈值 70%",
+      "内存告警阈值 75%",
+      "资源贴顶按 rb-msg-push-oom 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-msg-push-panel"
+  },
+  {
+    "id": 58,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「站内信服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-inbox",
+      "err-msg-inbox"
+    ],
+    "answer_anchors": [
+      "INB-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 INB-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 59,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「短信网关」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-sms",
+      "err-msg-sms"
+    ],
+    "answer_anchors": [
+      "SMS-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 SMS-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 60,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「短信网关」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 SMS-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-msg-sms-lat",
+      "rb-msg-sms-conn-pool"
+    ],
+    "answer_anchors": [
+      "700",
+      "3",
+      "SMS-503-001"
+    ],
+    "key_points": [
+      "P99 > 700ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "SMS-503-001 集中 → 依赖问题，按 rb-msg-sms-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 61,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「邮件投递服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-mail",
+      "err-msg-mail"
+    ],
+    "answer_anchors": [
+      "MAIL-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 MAIL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 62,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 邮件投递服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-msg-mail-01",
+      "svc-msg-mail"
+    ],
+    "answer_anchors": [
+      "@msg-oncall（消息域）",
+      "消息域"
+    ],
+    "key_points": [
+      "值班组是 @msg-oncall（消息域）",
+      "邮件投递服务 属于消息域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 63,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「长连接网关」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-ws-gw",
+      "err-msg-ws-gw"
+    ],
+    "answer_anchors": [
+      "WSG-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 WSG-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 64,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「长连接网关」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 WSG-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-msg-ws-gw-lat",
+      "rb-msg-ws-gw-cache-penetration"
+    ],
+    "answer_anchors": [
+      "900",
+      "1",
+      "WSG-503-001"
+    ],
+    "key_points": [
+      "P99 > 900ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "WSG-503-001 集中 → 依赖问题，按 rb-msg-ws-gw-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 65,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「长连接网关」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-msg-ws-gw",
+      "rb-msg-ws-gw-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 66,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「队列治理平台」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-queue-mgr",
+      "err-msg-queue-mgr"
+    ],
+    "answer_anchors": [
+      "QMG-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 QMG-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 67,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「消息模板中心」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-template",
+      "err-msg-template"
+    ],
+    "answer_anchors": [
+      "TPL-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 TPL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 68,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「消息模板中心」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 TPL-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-msg-template-lat",
+      "rb-msg-template-slow-query"
+    ],
+    "answer_anchors": [
+      "600",
+      "3",
+      "TPL-503-001"
+    ],
+    "key_points": [
+      "P99 > 600ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "TPL-503-001 集中 → 依赖问题，按 rb-msg-template-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 69,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 消息模板中心 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-msg-template-01",
+      "svc-msg-template"
+    ],
+    "answer_anchors": [
+      "@msg-oncall（消息域）",
+      "消息域"
+    ],
+    "key_points": [
+      "值班组是 @msg-oncall（消息域）",
+      "消息模板中心 属于消息域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 70,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 消息模板中心 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-msg-template-res",
+      "rb-msg-template-slow-query"
+    ],
+    "answer_anchors": [
+      "80",
+      "85"
+    ],
+    "key_points": [
+      "CPU 告警阈值 80%",
+      "内存告警阈值 85%",
+      "资源贴顶按 rb-msg-template-slow-query 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-msg-template-panel"
+  },
+  {
+    "id": 71,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「批量广播服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-msg-broadcast",
+      "err-msg-broadcast"
+    ],
+    "answer_anchors": [
+      "BCT-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 BCT-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 72,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「记账核心服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-ledger-core",
+      "err-ledger-core"
+    ],
+    "answer_anchors": [
+      "LDG-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 LDG-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 73,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「记账核心服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 LDG-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-ledger-core-lat",
+      "rb-ledger-core-oom"
+    ],
+    "answer_anchors": [
+      "800",
+      "1",
+      "LDG-503-001"
+    ],
+    "key_points": [
+      "P99 > 800ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "LDG-503-001 集中 → 依赖问题，按 rb-ledger-core-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 74,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「记账核心服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-ledger-core",
+      "rb-ledger-core-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 75,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「结算服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-ledger-settle",
+      "err-ledger-settle"
+    ],
+    "answer_anchors": [
+      "STL-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 STL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 76,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 结算服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-ledger-settle-01",
+      "svc-ledger-settle"
+    ],
+    "answer_anchors": [
+      "@data-oncall（数据域）",
+      "数据域"
+    ],
+    "key_points": [
+      "值班组是 @data-oncall（数据域）",
+      "结算服务 属于数据域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 77,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「数据同步服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-data-sync",
+      "err-data-sync"
+    ],
+    "answer_anchors": [
+      "DSY-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 DSY-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 78,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「数据同步服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 DSY-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-data-sync-lat",
+      "rb-data-sync-conn-pool"
+    ],
+    "answer_anchors": [
+      "500",
+      "3",
+      "DSY-503-001"
+    ],
+    "key_points": [
+      "P99 > 500ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "DSY-503-001 集中 → 依赖问题，按 rb-data-sync-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 79,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「离线计算调度」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-data-etl",
+      "err-data-etl"
+    ],
+    "answer_anchors": [
+      "ETL-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 ETL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 80,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「报表服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-data-report",
+      "err-data-report"
+    ],
+    "answer_anchors": [
+      "RPT-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 RPT-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 81,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「报表服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 RPT-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-data-report-lat",
+      "rb-data-report-cache-penetration"
+    ],
+    "answer_anchors": [
+      "700",
+      "1",
+      "RPT-503-001"
+    ],
+    "key_points": [
+      "P99 > 700ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "RPT-503-001 集中 → 依赖问题，按 rb-data-report-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 82,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 报表服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-data-report-01",
+      "svc-data-report"
+    ],
+    "answer_anchors": [
+      "@data-oncall（数据域）",
+      "数据域"
+    ],
+    "key_points": [
+      "值班组是 @data-oncall（数据域）",
+      "报表服务 属于数据域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 83,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「报表服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-data-report",
+      "rb-data-report-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 84,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 报表服务 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-data-report-res",
+      "rb-data-report-cache-penetration"
+    ],
+    "answer_anchors": [
+      "70",
+      "75"
+    ],
+    "key_points": [
+      "CPU 告警阈值 70%",
+      "内存告警阈值 75%",
+      "资源贴顶按 rb-data-report-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-data-report-panel"
+  },
+  {
+    "id": 85,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「用户画像服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-data-profile",
+      "err-data-profile"
+    ],
+    "answer_anchors": [
+      "PRF-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 PRF-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 86,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「配置字典服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-data-dict",
+      "err-data-dict"
+    ],
+    "answer_anchors": [
+      "DCT-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 DCT-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 87,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「配置字典服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 DCT-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-data-dict-lat",
+      "rb-data-dict-slow-query"
+    ],
+    "answer_anchors": [
+      "900",
+      "3",
+      "DCT-503-001"
+    ],
+    "key_points": [
+      "P99 > 900ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "DCT-503-001 集中 → 依赖问题，按 rb-data-dict-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 88,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「数据归档服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-data-archive",
+      "err-data-archive"
+    ],
+    "answer_anchors": [
+      "ARC-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 ARC-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 89,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 数据归档服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-data-archive-01",
+      "svc-data-archive"
+    ],
+    "answer_anchors": [
+      "@data-oncall（数据域）",
+      "数据域"
+    ],
+    "key_points": [
+      "值班组是 @data-oncall（数据域）",
+      "数据归档服务 属于数据域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 90,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「实时决策引擎」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-risk-decision",
+      "err-risk-decision"
+    ],
+    "answer_anchors": [
+      "RSK-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 RSK-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 91,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「实时决策引擎」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 RSK-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-risk-decision-lat",
+      "rb-risk-decision-oom"
+    ],
+    "answer_anchors": [
+      "600",
+      "1",
+      "RSK-503-001"
+    ],
+    "key_points": [
+      "P99 > 600ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "RSK-503-001 集中 → 依赖问题，按 rb-risk-decision-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 92,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「实时决策引擎」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-risk-decision",
+      "rb-risk-decision-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 93,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「规则管理服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-risk-rules",
+      "err-risk-rules"
+    ],
+    "answer_anchors": [
+      "RUL-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 RUL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 94,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「名单服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-risk-list",
+      "err-risk-list"
+    ],
+    "answer_anchors": [
+      "BLK-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 BLK-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 95,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「名单服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 BLK-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-risk-list-lat",
+      "rb-risk-list-conn-pool"
+    ],
+    "answer_anchors": [
+      "800",
+      "3",
+      "BLK-503-001"
+    ],
+    "key_points": [
+      "P99 > 800ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "BLK-503-001 集中 → 依赖问题，按 rb-risk-list-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 96,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 名单服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-risk-list-01",
+      "svc-risk-list"
+    ],
+    "answer_anchors": [
+      "@risk-oncall（风控域）",
+      "风控域"
+    ],
+    "key_points": [
+      "值班组是 @risk-oncall（风控域）",
+      "名单服务 属于风控域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 97,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 名单服务 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-risk-list-res",
+      "rb-risk-list-conn-pool"
+    ],
+    "answer_anchors": [
+      "80",
+      "85"
+    ],
+    "key_points": [
+      "CPU 告警阈值 80%",
+      "内存告警阈值 85%",
+      "资源贴顶按 rb-risk-list-conn-pool 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-risk-list-panel"
+  },
+  {
+    "id": 98,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「设备指纹服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-risk-device",
+      "err-risk-device"
+    ],
+    "answer_anchors": [
+      "DEV-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 DEV-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 99,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「模型推理服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-risk-model",
+      "err-risk-model"
+    ],
+    "answer_anchors": [
+      "MDL-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 MDL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 100,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「模型推理服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 MDL-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-risk-model-lat",
+      "rb-risk-model-cache-penetration"
+    ],
+    "answer_anchors": [
+      "500",
+      "1",
+      "MDL-503-001"
+    ],
+    "key_points": [
+      "P99 > 500ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "MDL-503-001 集中 → 依赖问题，按 rb-risk-model-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 101,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「模型推理服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-risk-model",
+      "rb-risk-model-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 102,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「风控审计服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-risk-audit",
+      "err-risk-audit"
+    ],
+    "answer_anchors": [
+      "AUD-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 AUD-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 103,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 风控审计服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-risk-audit-01",
+      "svc-risk-audit"
+    ],
+    "answer_anchors": [
+      "@risk-oncall（风控域）",
+      "风控域"
+    ],
+    "key_points": [
+      "值班组是 @risk-oncall（风控域）",
+      "风控审计服务 属于风控域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 104,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「优惠券服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-coupon",
+      "err-mkt-coupon"
+    ],
+    "answer_anchors": [
+      "CPN-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 CPN-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 105,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「优惠券服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 CPN-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-mkt-coupon-lat",
+      "rb-mkt-coupon-slow-query"
+    ],
+    "answer_anchors": [
+      "700",
+      "3",
+      "CPN-503-001"
+    ],
+    "key_points": [
+      "P99 > 700ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "CPN-503-001 集中 → 依赖问题，按 rb-mkt-coupon-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 106,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「活动管理服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-activity",
+      "err-mkt-activity"
+    ],
+    "answer_anchors": [
+      "ACT-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 ACT-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 107,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「红包服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-red-envelope",
+      "err-mkt-red-envelope"
+    ],
+    "answer_anchors": [
+      "RED-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 RED-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 108,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「红包服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 RED-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-mkt-red-envelope-lat",
+      "rb-mkt-red-envelope-oom"
+    ],
+    "answer_anchors": [
+      "900",
+      "1",
+      "RED-503-001"
+    ],
+    "key_points": [
+      "P99 > 900ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "RED-503-001 集中 → 依赖问题，按 rb-mkt-red-envelope-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 109,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 红包服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-mkt-red-envelope-01",
+      "svc-mkt-red-envelope"
+    ],
+    "answer_anchors": [
+      "@mkt-oncall（营销域）",
+      "营销域"
+    ],
+    "key_points": [
+      "值班组是 @mkt-oncall（营销域）",
+      "红包服务 属于营销域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 110,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「红包服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-mkt-red-envelope",
+      "rb-mkt-red-envelope-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 111,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 红包服务 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-mkt-red-envelope-res",
+      "rb-mkt-red-envelope-oom"
+    ],
+    "answer_anchors": [
+      "70",
+      "75"
+    ],
+    "key_points": [
+      "CPU 告警阈值 70%",
+      "内存告警阈值 75%",
+      "资源贴顶按 rb-mkt-red-envelope-oom 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-mkt-red-envelope-panel"
+  },
+  {
+    "id": 112,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「分享裂变服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-referral",
+      "err-mkt-referral"
+    ],
+    "answer_anchors": [
+      "REF-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 REF-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 113,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「积分服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-point",
+      "err-mkt-point"
+    ],
+    "answer_anchors": [
+      "PNT-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 PNT-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 114,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「积分服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 PNT-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-mkt-point-lat",
+      "rb-mkt-point-conn-pool"
+    ],
+    "answer_anchors": [
+      "600",
+      "3",
+      "PNT-503-001"
+    ],
+    "key_points": [
+      "P99 > 600ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "PNT-503-001 集中 → 依赖问题，按 rb-mkt-point-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 115,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「抽奖服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-prize",
+      "err-mkt-prize"
+    ],
+    "answer_anchors": [
+      "PRZ-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 PRZ-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 116,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 抽奖服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-mkt-prize-01",
+      "svc-mkt-prize"
+    ],
+    "answer_anchors": [
+      "@mkt-oncall（营销域）",
+      "营销域"
+    ],
+    "key_points": [
+      "值班组是 @mkt-oncall（营销域）",
+      "抽奖服务 属于营销域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 117,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「实验平台」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-abtest",
+      "err-mkt-abtest"
+    ],
+    "answer_anchors": [
+      "ABT-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 ABT-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 118,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「实验平台」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 ABT-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-mkt-abtest-lat",
+      "rb-mkt-abtest-cache-penetration"
+    ],
+    "answer_anchors": [
+      "800",
+      "1",
+      "ABT-503-001"
+    ],
+    "key_points": [
+      "P99 > 800ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "ABT-503-001 集中 → 依赖问题，按 rb-mkt-abtest-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 119,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「实验平台」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-mkt-abtest",
+      "rb-mkt-abtest-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 120,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「触达旅程引擎」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-mkt-journey",
+      "err-mkt-journey"
+    ],
+    "answer_anchors": [
+      "JRN-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 JRN-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 121,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「运单服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-logi-waybill",
+      "err-logi-waybill"
+    ],
+    "answer_anchors": [
+      "WYB-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 WYB-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 122,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「运单服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 WYB-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-logi-waybill-lat",
+      "rb-logi-waybill-slow-query"
+    ],
+    "answer_anchors": [
+      "500",
+      "3",
+      "WYB-503-001"
+    ],
+    "key_points": [
+      "P99 > 500ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "WYB-503-001 集中 → 依赖问题，按 rb-logi-waybill-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 123,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 运单服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-logi-waybill-01",
+      "svc-logi-waybill"
+    ],
+    "answer_anchors": [
+      "@logi-oncall（物流域）",
+      "物流域"
+    ],
+    "key_points": [
+      "值班组是 @logi-oncall（物流域）",
+      "运单服务 属于物流域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 124,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 运单服务 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-logi-waybill-res",
+      "rb-logi-waybill-slow-query"
+    ],
+    "answer_anchors": [
+      "80",
+      "85"
+    ],
+    "key_points": [
+      "CPU 告警阈值 80%",
+      "内存告警阈值 85%",
+      "资源贴顶按 rb-logi-waybill-slow-query 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-logi-waybill-panel"
+  },
+  {
+    "id": 125,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「轨迹服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-logi-track",
+      "err-logi-track"
+    ],
+    "answer_anchors": [
+      "TRK-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 TRK-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 126,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「调度服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-logi-dispatch",
+      "err-logi-dispatch"
+    ],
+    "answer_anchors": [
+      "DSP-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 DSP-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 127,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「调度服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 DSP-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-logi-dispatch-lat",
+      "rb-logi-dispatch-oom"
+    ],
+    "answer_anchors": [
+      "700",
+      "1",
+      "DSP-503-001"
+    ],
+    "key_points": [
+      "P99 > 700ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "DSP-503-001 集中 → 依赖问题，按 rb-logi-dispatch-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 128,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「调度服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-logi-dispatch",
+      "rb-logi-dispatch-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 129,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「仓储服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-logi-warehouse",
+      "err-logi-warehouse"
+    ],
+    "answer_anchors": [
+      "WHS-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 WHS-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 130,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 仓储服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-logi-warehouse-01",
+      "svc-logi-warehouse"
+    ],
+    "answer_anchors": [
+      "@logi-oncall（物流域）",
+      "物流域"
+    ],
+    "key_points": [
+      "值班组是 @logi-oncall（物流域）",
+      "仓储服务 属于物流域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 131,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「承运商对接服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-logi-carrier",
+      "err-logi-carrier"
+    ],
+    "answer_anchors": [
+      "CRR-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 CRR-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 132,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「承运商对接服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 CRR-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-logi-carrier-lat",
+      "rb-logi-carrier-conn-pool"
+    ],
+    "answer_anchors": [
+      "900",
+      "3",
+      "CRR-503-001"
+    ],
+    "key_points": [
+      "P99 > 900ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "CRR-503-001 集中 → 依赖问题，按 rb-logi-carrier-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 133,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「异常件服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-logi-exception",
+      "err-logi-exception"
+    ],
+    "answer_anchors": [
+      "EXC-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 EXC-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 134,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「上传接入服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-media-upload",
+      "err-media-upload"
+    ],
+    "answer_anchors": [
+      "UPL-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 UPL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 135,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「上传接入服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 UPL-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-media-upload-lat",
+      "rb-media-upload-cache-penetration"
+    ],
+    "answer_anchors": [
+      "600",
+      "1",
+      "UPL-503-001"
+    ],
+    "key_points": [
+      "P99 > 600ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "UPL-503-001 集中 → 依赖问题，按 rb-media-upload-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 136,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 上传接入服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-media-upload-01",
+      "svc-media-upload"
+    ],
+    "answer_anchors": [
+      "@media-oncall（媒体域）",
+      "媒体域"
+    ],
+    "key_points": [
+      "值班组是 @media-oncall（媒体域）",
+      "上传接入服务 属于媒体域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 137,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「上传接入服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-media-upload",
+      "rb-media-upload-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 138,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 上传接入服务 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-media-upload-res",
+      "rb-media-upload-cache-penetration"
+    ],
+    "answer_anchors": [
+      "70",
+      "75"
+    ],
+    "key_points": [
+      "CPU 告警阈值 70%",
+      "内存告警阈值 75%",
+      "资源贴顶按 rb-media-upload-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-media-upload-panel"
+  },
+  {
+    "id": 139,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「转码集群」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-media-transcode",
+      "err-media-transcode"
+    ],
+    "answer_anchors": [
+      "TRC-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 TRC-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 140,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「CDN 调度服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-media-cdn-sched",
+      "err-media-cdn-sched"
+    ],
+    "answer_anchors": [
+      "CDS-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 CDS-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 141,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「CDN 调度服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 CDS-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-media-cdn-sched-lat",
+      "rb-media-cdn-sched-slow-query"
+    ],
+    "answer_anchors": [
+      "800",
+      "3",
+      "CDS-503-001"
+    ],
+    "key_points": [
+      "P99 > 800ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "CDS-503-001 集中 → 依赖问题，按 rb-media-cdn-sched-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 142,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「截帧封面服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-media-thumb",
+      "err-media-thumb"
+    ],
+    "answer_anchors": [
+      "THM-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 THM-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 143,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 截帧封面服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-media-thumb-01",
+      "svc-media-thumb"
+    ],
+    "answer_anchors": [
+      "@media-oncall（媒体域）",
+      "媒体域"
+    ],
+    "key_points": [
+      "值班组是 @media-oncall（媒体域）",
+      "截帧封面服务 属于媒体域",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 144,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「水印服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-media-wm",
+      "err-media-wm"
+    ],
+    "answer_anchors": [
+      "WMK-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 WMK-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 145,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「水印服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 WMK-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-media-wm-lat",
+      "rb-media-wm-oom"
+    ],
+    "answer_anchors": [
+      "500",
+      "1",
+      "WMK-503-001"
+    ],
+    "key_points": [
+      "P99 > 500ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "WMK-503-001 集中 → 依赖问题，按 rb-media-wm-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 146,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「水印服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-media-wm",
+      "rb-media-wm-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 147,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「播放鉴权服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-media-player",
+      "err-media-player"
+    ],
+    "answer_anchors": [
+      "PLY-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 PLY-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 148,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「开放网关」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-open-api",
+      "err-open-api"
+    ],
+    "answer_anchors": [
+      "OAPI-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 OAPI-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 149,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「开放网关」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 OAPI-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-open-api-lat",
+      "rb-open-api-conn-pool"
+    ],
+    "answer_anchors": [
+      "700",
+      "3",
+      "OAPI-503-001"
+    ],
+    "key_points": [
+      "P99 > 700ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "OAPI-503-001 集中 → 依赖问题，按 rb-open-api-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 150,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 开放网关 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-open-api-01",
+      "svc-open-api"
+    ],
+    "answer_anchors": [
+      "@open-oncall（开放平台）",
+      "开放平台"
+    ],
+    "key_points": [
+      "值班组是 @open-oncall（开放平台）",
+      "开放网关 属于开放平台",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 151,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 开放网关 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-open-api-res",
+      "rb-open-api-conn-pool"
+    ],
+    "answer_anchors": [
+      "80",
+      "85"
+    ],
+    "key_points": [
+      "CPU 告警阈值 80%",
+      "内存告警阈值 85%",
+      "资源贴顶按 rb-open-api-conn-pool 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-open-api-panel"
+  },
+  {
+    "id": 152,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「授权服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-open-auth",
+      "err-open-auth"
+    ],
+    "answer_anchors": [
+      "OAUTH-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 OAUTH-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 153,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「应用管理服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-open-app",
+      "err-open-app"
+    ],
+    "answer_anchors": [
+      "OAPP-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 OAPP-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 154,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「应用管理服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 OAPP-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-open-app-lat",
+      "rb-open-app-cache-penetration"
+    ],
+    "answer_anchors": [
+      "900",
+      "1",
+      "OAPP-503-001"
+    ],
+    "key_points": [
+      "P99 > 900ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "OAPP-503-001 集中 → 依赖问题，按 rb-open-app-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 155,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「应用管理服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-open-app",
+      "rb-open-app-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 156,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「回调推送服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-open-webhook",
+      "err-open-webhook"
+    ],
+    "answer_anchors": [
+      "OWBH-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 OWBH-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 157,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 回调推送服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-open-webhook-01",
+      "svc-open-webhook"
+    ],
+    "answer_anchors": [
+      "@open-oncall（开放平台）",
+      "开放平台"
+    ],
+    "key_points": [
+      "值班组是 @open-oncall（开放平台）",
+      "回调推送服务 属于开放平台",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 158,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「配额服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-open-quota",
+      "err-open-quota"
+    ],
+    "answer_anchors": [
+      "OQTA-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 OQTA-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 159,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「配额服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 OQTA-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-open-quota-lat",
+      "rb-open-quota-slow-query"
+    ],
+    "answer_anchors": [
+      "600",
+      "3",
+      "OQTA-503-001"
+    ],
+    "key_points": [
+      "P99 > 600ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "OQTA-503-001 集中 → 依赖问题，按 rb-open-quota-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 160,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「沙箱环境服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-open-sandbox",
+      "err-open-sandbox"
+    ],
+    "answer_anchors": [
+      "OSBX-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 OSBX-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 161,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「文件服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-file",
+      "err-infra-file"
+    ],
+    "answer_anchors": [
+      "FIL-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 FIL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 162,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「文件服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 FIL-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-infra-file-lat",
+      "rb-infra-file-oom"
+    ],
+    "answer_anchors": [
+      "800",
+      "1",
+      "FIL-503-001"
+    ],
+    "key_points": [
+      "P99 > 800ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "FIL-503-001 集中 → 依赖问题，按 rb-infra-file-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 163,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 文件服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-infra-file-01",
+      "svc-infra-file"
+    ],
+    "answer_anchors": [
+      "@infra-oncall（平台组件）",
+      "平台组件"
+    ],
+    "key_points": [
+      "值班组是 @infra-oncall（平台组件）",
+      "文件服务 属于平台组件",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 164,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「文件服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-infra-file",
+      "rb-infra-file-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 165,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 文件服务 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-infra-file-res",
+      "rb-infra-file-oom"
+    ],
+    "answer_anchors": [
+      "70",
+      "75"
+    ],
+    "key_points": [
+      "CPU 告警阈值 70%",
+      "内存告警阈值 75%",
+      "资源贴顶按 rb-infra-file-oom 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-infra-file-panel"
+  },
+  {
+    "id": 166,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「发号器服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-seq",
+      "err-infra-seq"
+    ],
+    "answer_anchors": [
+      "SEQ-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 SEQ-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 167,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「分布式锁服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-lock",
+      "err-infra-lock"
+    ],
+    "answer_anchors": [
+      "LCK-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 LCK-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 168,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「分布式锁服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 LCK-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-infra-lock-lat",
+      "rb-infra-lock-conn-pool"
+    ],
+    "answer_anchors": [
+      "500",
+      "3",
+      "LCK-503-001"
+    ],
+    "key_points": [
+      "P99 > 500ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "LCK-503-001 集中 → 依赖问题，按 rb-infra-lock-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 169,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「ID 生成服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-idgen",
+      "err-infra-idgen"
+    ],
+    "answer_anchors": [
+      "IDG-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 IDG-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 170,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 ID 生成服务 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-infra-idgen-01",
+      "svc-infra-idgen"
+    ],
+    "answer_anchors": [
+      "@infra-oncall（平台组件）",
+      "平台组件"
+    ],
+    "key_points": [
+      "值班组是 @infra-oncall（平台组件）",
+      "ID 生成服务 属于平台组件",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 171,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「任务调度中心」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-job",
+      "err-infra-job"
+    ],
+    "answer_anchors": [
+      "JOB-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 JOB-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 172,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「任务调度中心」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 JOB-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-infra-job-lat",
+      "rb-infra-job-cache-penetration"
+    ],
+    "answer_anchors": [
+      "700",
+      "1",
+      "JOB-503-001"
+    ],
+    "key_points": [
+      "P99 > 700ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "JOB-503-001 集中 → 依赖问题，按 rb-infra-job-cache-penetration 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 173,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「任务调度中心」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-infra-job",
+      "rb-infra-job-cache-penetration"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 174,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「配置中心代理」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-config",
+      "err-infra-config"
+    ],
+    "answer_anchors": [
+      "CFG-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 CFG-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 175,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「链路采集网关」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-trace",
+      "err-infra-trace"
+    ],
+    "answer_anchors": [
+      "TRA-429-001",
+      "20"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 20",
+      "超限返回 TRA-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 176,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「链路采集网关」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 TRA-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-infra-trace-lat",
+      "rb-infra-trace-slow-query"
+    ],
+    "answer_anchors": [
+      "900",
+      "3",
+      "TRA-503-001"
+    ],
+    "key_points": [
+      "P99 > 900ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "TRA-503-001 集中 → 依赖问题，按 rb-infra-trace-slow-query 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 177,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 链路采集网关 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-infra-trace-01",
+      "svc-infra-trace"
+    ],
+    "answer_anchors": [
+      "@infra-oncall（平台组件）",
+      "平台组件"
+    ],
+    "key_points": [
+      "值班组是 @infra-oncall（平台组件）",
+      "链路采集网关 属于平台组件",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 178,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "监控面板截图显示 链路采集网关 的 CPU 与内存水位双双超过告警阈值，应该按哪篇告警规则确认阈值、按哪篇处置手册处理？",
+    "golden_doc_ids": [
+      "alert-infra-trace-res",
+      "rb-infra-trace-slow-query"
+    ],
+    "answer_anchors": [
+      "80",
+      "85"
+    ],
+    "key_points": [
+      "CPU 告警阈值 80%",
+      "内存告警阈值 85%",
+      "资源贴顶按 rb-infra-trace-slow-query 处置"
+    ],
+    "notes": "检索类型: multimodal；对应截图 img-infra-trace-panel"
+  },
+  {
+    "id": 179,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「指标网关」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-metric",
+      "err-infra-metric"
+    ],
+    "answer_anchors": [
+      "MTR-429-001",
+      "30"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 30",
+      "超限返回 MTR-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 180,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「内部计费服务」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-billing",
+      "err-infra-billing"
+    ],
+    "answer_anchors": [
+      "BIL-429-001",
+      "40"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 40",
+      "超限返回 BIL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 181,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「内部计费服务」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 BIL-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-infra-billing-lat",
+      "rb-infra-billing-oom"
+    ],
+    "answer_anchors": [
+      "600",
+      "1",
+      "BIL-503-001"
+    ],
+    "key_points": [
+      "P99 > 600ms 持续 5 分钟触发",
+      "错误率 > 1% 持续 3 分钟",
+      "BIL-503-001 集中 → 依赖问题，按 rb-infra-billing-oom 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 182,
+    "intent": "rag",
+    "difficulty": "hard",
+    "question": "「内部计费服务」的压测基线是多少？连接池和副本数为什么要联动调整？",
+    "golden_doc_ids": [
+      "spec-infra-billing",
+      "rb-infra-billing-oom"
+    ],
+    "answer_anchors": [
+      "6000",
+      "2000"
+    ],
+    "key_points": [
+      "压测基线 6000 QPS",
+      "单接口限流 2000 QPS",
+      "扩容后连接池不联动会耗尽，见连接池耗尽处置"
+    ],
+    "notes": "检索类型: edge"
+  },
+  {
+    "id": 183,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「网关插件平台」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-gw-plugin",
+      "err-infra-gw-plugin"
+    ],
+    "answer_anchors": [
+      "GWP-429-001",
+      "50"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 50",
+      "超限返回 GWP-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 184,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "线上有人反馈 网关插件平台 挂了，大半夜的应该喊谁？这个服务具体是干嘛的？",
+    "golden_doc_ids": [
+      "faq-infra-gw-plugin-01",
+      "svc-infra-gw-plugin"
+    ],
+    "answer_anchors": [
+      "@infra-oncall（平台组件）",
+      "平台组件"
+    ],
+    "key_points": [
+      "值班组是 @infra-oncall（平台组件）",
+      "网关插件平台 属于平台组件",
+      "15 分钟无响应按 oncall-escalation 升级"
+    ],
+    "notes": "检索类型: colloquial"
+  },
+  {
+    "id": 185,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「服务注册代理」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-ssr",
+      "err-infra-ssr"
+    ],
+    "answer_anchors": [
+      "SSR-429-001",
+      "60"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 60",
+      "超限返回 SSR-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
+  },
+  {
+    "id": 186,
+    "intent": "rag",
+    "difficulty": "medium",
+    "question": "「服务注册代理」的 P1 延迟告警阈值是多少？告警触发后如果 5xx 集中在 SSR-503-001，应该按哪篇文档处置？",
+    "golden_doc_ids": [
+      "alert-infra-ssr-lat",
+      "rb-infra-ssr-conn-pool"
+    ],
+    "answer_anchors": [
+      "800",
+      "3",
+      "SSR-503-001"
+    ],
+    "key_points": [
+      "P99 > 800ms 持续 5 分钟触发",
+      "错误率 > 3% 持续 3 分钟",
+      "SSR-503-001 集中 → 依赖问题，按 rb-infra-ssr-conn-pool 处置"
+    ],
+    "notes": "检索类型: multi-hop"
+  },
+  {
+    "id": 187,
+    "intent": "rag",
+    "difficulty": "easy",
+    "question": "「告警通知汇聚」的单用户操作限流是多少？超限返回什么错误码？",
+    "golden_doc_ids": [
+      "svc-infra-ntf-hub",
+      "err-infra-ntf-hub"
+    ],
+    "answer_anchors": [
+      "NAL-429-001",
+      "70"
+    ],
+    "key_points": [
+      "单用户操作 QPS 限 70",
+      "超限返回 NAL-429-001",
+      "按 Retry-After 退避重试"
+    ],
+    "notes": "检索类型: single-hop"
   }
 ]

@@ -55,7 +55,7 @@ CATEGORY_LABEL = {
     "spec": "长文档·技术规范",
 }
 
-KB_VERSION = 1
+KB_VERSION = 2
 
 
 def render_markdown(doc: Doc, updated: str) -> str:

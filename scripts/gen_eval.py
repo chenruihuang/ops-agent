@@ -418,6 +418,13 @@ Q: list[dict] = [
                      "症状隐蔽：链路不是断了而是分裂成两棵树，看链路图容易误判为两个独立请求"]),
 ]
 
+# ---- 舰队扩展（53 起）：与 data/source/fleet.py 同源派生 ----
+# 锚点与 golden 全部由舰队模板常量派生，与文档正文共享同一套公式，
+# check_annotation 第 8 条（锚点逐字出现在正文）天然可过。
+from data.source.fleet import fleet_questions as _fleet_questions  # noqa: E402
+
+Q.extend(_fleet_questions(len(Q) + 1))
+
 
 def main() -> int:
     # ---- 校验 1：golden_doc_ids 必须存在于语料清单 ----

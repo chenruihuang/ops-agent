@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 import traceback
@@ -153,7 +154,9 @@ def main() -> int:
 
         docs = asyncio.run(run())
         chunks = [c for d in docs for c in d.chunks]
-        check("真实截图全部装载（20 张）", len(docs) == 20, str(len(docs)))
+        # 数量从 MANIFEST 派生而非写死 —— 语料规模扩容（20 → 100+）后这里不能假性挂红
+        n_expected = len(json.loads((raw / "images" / "MANIFEST.json").read_text(encoding="utf-8"))["images"])
+        check(f"真实截图全部装载（{n_expected} 张）", len(docs) == n_expected, str(len(docs)))
         check("OCR 转录未缺失", all(d.ocr_chars > 0 for d in docs),
               str([d.image_id for d in docs if d.ocr_chars == 0]))
         check("每张图至少产出 2 个块", all(len(d.chunks) >= 2 for d in docs),
@@ -175,8 +178,8 @@ def main() -> int:
             return provider, out
 
         provider, out = asyncio.run(run_missing())
-        check("缺转录文件时留痕而非静默", len(provider.missing) == 20, str(len(provider.missing)))
-        check("缺 OCR 时仍产出描述块", sum(len(d.chunks) for d in out) == 20,
+        check("缺转录文件时留痕而非静默", len(provider.missing) == n_expected, str(len(provider.missing)))
+        check("缺 OCR 时仍产出描述块", sum(len(d.chunks) for d in out) == n_expected,
               str(sum(len(d.chunks) for d in out)))
     else:
         print("  [SKIP] 真实截图清单不存在")
